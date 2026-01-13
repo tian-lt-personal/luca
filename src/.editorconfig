@@ -1,0 +1,13 @@
+# top-most EditorConfig file
+root = true
+
+[*]
+insert_final_newline = true
+
+[*.{cs,xaml}]
+charset = utf-8
+
+# 4 space indentation
+[*.cs]
+indent_style = space
+indent_size = 4
