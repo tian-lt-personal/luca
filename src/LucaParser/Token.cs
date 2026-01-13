@@ -32,3 +32,44 @@ public class KeywordCurexpr : IToken
 {
     public TokenType Type => TokenType.Keyword;
 }
+
+public class OperatorPropOf : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorPlus : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorMinus : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorMultiply : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorDivide : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorRem : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorEq : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorNe : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorLeftParen : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
+public class OperatorRightParen : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}

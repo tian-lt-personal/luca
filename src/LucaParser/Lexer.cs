@@ -9,6 +9,11 @@ public class LexerError : Exception
     public LexerError(string message) : base(message) { }
 }
 
+public class DrainedError : LexerError
+{
+    public DrainedError(int? index) : base($"drained at {index}") { }
+}
+
 public class BadKeywordError : LexerError
 {
     public string Keyword { get; init; }
@@ -16,6 +21,16 @@ public class BadKeywordError : LexerError
     {
         SourceIndex = index;
         Keyword = keyword;
+    }
+}
+
+public class BadOperatorError : LexerError
+{
+    public string Operator { get; init; }
+    public BadOperatorError(int? index, string op) : base($"bad operator token, index = {index}, operator-name = {op}.")
+    {
+        SourceIndex = index;
+        Operator = op;
     }
 }
 
@@ -34,7 +49,7 @@ internal class Lexer
     private const string _pattern =
         @"(?<Keyword>\b(if|then|else|curexpr)\b)|" +
         @"(?<IntegerLiteral>\d+)|" +
-        @"(?<Operator>->|[\+\-\*/=<>!])|" +
+        @"(?<Operator>->|!=|[\+\-\*/=<>%\(\)])|" +
         @"(?<Ws>\s+)";
     private readonly string _source;
     private readonly Regex _dfa;
@@ -65,9 +80,13 @@ internal class Lexer
                             switch (group.Name)
                             {
                                 case "Keyword":
-                                    return CreateKeywordToken(group.Value, idx);
+                                    return CreateKeyword(group.Value, idx);
                                 case "IntegerLiteral":
                                     return CreateIntegerLiteral(group.Value, idx);
+                                case "Operator":
+                                    return CreateOperator(group.Value, idx);
+                                default:
+                                    throw new ArgumentException();
                             }
                         }
                     }
@@ -78,10 +97,10 @@ internal class Lexer
                 throw new LexerError(_idx);
             }
         }
-        throw new LexerError(_idx);
+        throw new DrainedError(_idx);
     }
 
-    private static IToken CreateKeywordToken(string name, int index)
+    private static IToken CreateKeyword(string name, int index)
     {
         switch (name)
         {
@@ -107,6 +126,35 @@ internal class Lexer
         catch (FormatException)
         {
             throw new BadIntegerLiteral(index, literal);
+        }
+    }
+
+    private static IToken CreateOperator(string name, int index)
+    {
+        switch (name)
+        {
+            case "->":
+                return new OperatorPropOf();
+            case "+":
+                return new OperatorPlus();
+            case "-":
+                return new OperatorMinus();
+            case "*":
+                return new OperatorMultiply();
+            case "/":
+                return new OperatorDivide();
+            case "%":
+                return new OperatorRem();
+            case "=":
+                return new OperatorEq();
+            case "!=":
+                return new OperatorNe();
+            case "(":
+                return new OperatorLeftParen();
+            case ")":
+                return new OperatorRightParen();
+            default:
+                throw new BadOperatorError(index, name);
         }
     }
 }

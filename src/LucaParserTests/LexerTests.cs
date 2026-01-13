@@ -7,6 +7,10 @@ public class LexerTests
     [Theory]
     [InlineData("")]
     [InlineData("?")]
+    [InlineData(" ")]
+    [InlineData("  ")]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
     [InlineData("bad_keyword")]
     public void BadSource(string source)
     {
@@ -34,6 +38,23 @@ public class LexerTests
     }
 
     [Theory]
+    [InlineData("+", nameof(OperatorPlus))]
+    [InlineData("-", nameof(OperatorMinus))]
+    [InlineData("*", nameof(OperatorMultiply))]
+    [InlineData("/", nameof(OperatorDivide))]
+    [InlineData("%", nameof(OperatorRem))]
+    [InlineData("(", nameof(OperatorLeftParen))]
+    [InlineData(")", nameof(OperatorRightParen))]
+    [InlineData("=", nameof(OperatorEq))]
+    [InlineData("!=", nameof(OperatorNe))]
+    [InlineData("->", nameof(OperatorPropOf))]
+    public void Operators(string source, string expectedType)
+    {
+        var token = new Lexer(source).GetToken();
+        Assert.Equal(expectedType, token.GetType().Name);
+    }
+
+    [Theory]
     [InlineData("0", 0)]
     [InlineData("1", 1)]
     [InlineData("2", 2)]
@@ -45,5 +66,41 @@ public class LexerTests
     {
         var token = new Lexer(source).GetToken();
         Assert.Equal(expectedValue, ((IntegerLiteral)token).Value);
+    }
+
+    [Theory]
+    [InlineData("if", nameof(KeywordIf))]
+    [InlineData("if then", nameof(KeywordIf), nameof(KeywordThen))]
+    [InlineData("if then else", nameof(KeywordIf), nameof(KeywordThen), nameof(KeywordElse))]
+    [InlineData("1 else", nameof(IntegerLiteral), nameof(KeywordElse))]
+    [InlineData("curexpr 001 if 3", nameof(KeywordCurexpr), nameof(IntegerLiteral), nameof(KeywordIf), nameof(IntegerLiteral))]
+    [InlineData("    if  321  \n\r 20\n   if   \n", nameof(KeywordIf), nameof(IntegerLiteral), nameof(IntegerLiteral), nameof(KeywordIf))]
+    [InlineData("if(1) then (2+3)\r\nelse 5!=2",
+        nameof(KeywordIf), nameof(OperatorLeftParen), nameof(IntegerLiteral), nameof(OperatorRightParen),
+        nameof(KeywordThen), nameof(OperatorLeftParen), nameof(IntegerLiteral), nameof(OperatorPlus),
+        nameof(IntegerLiteral), nameof(OperatorRightParen), nameof(KeywordElse), nameof(IntegerLiteral),
+        nameof(OperatorNe), nameof(IntegerLiteral))]
+    public void TokenSequence(string source, params string[] expectedTypes)
+    {
+        var lexer = new Lexer(source);
+        foreach (var expected in expectedTypes)
+        {
+            var token = lexer.GetToken();
+            Assert.Equal(expected, token.GetType().Name);
+        }
+        Assert.True(HasDrained(lexer));
+    }
+
+    private static bool HasDrained(Lexer lexer)
+    {
+        try
+        {
+            lexer.GetToken();
+        }
+        catch (DrainedError)
+        {
+            return true;
+        }
+        return false;
     }
 }
