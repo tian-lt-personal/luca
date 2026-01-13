@@ -1,0 +1,9 @@
+[Bb]uild/
+[Bb]in/
+[Dd]ebug/
+[Oo]bj/
+[Oo]ut/
+[Oo]utput/
+[Rr]elease/
+
+*.log
