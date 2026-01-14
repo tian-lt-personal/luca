@@ -50,7 +50,7 @@ internal sealed class Lexer
         @"(?<Keyword>\b(if|then|else|curexpr)\b)|" +
         @"(?<Identifier>[A-z_a-z][\w_]*)|" +
         @"(?<IntegerLiteral>\b\d+\b)|" +
-        @"(?<Operator>->|!=|[\+\-\*/=<>%\(\)])|" +
+        @"(?<Operator>->|!=|[.\+\-\*/=<>%\(\)])|" +
         @"(?<Ws>\s+)";
     private readonly string _source;
     private readonly Regex _dfa;
@@ -63,6 +63,16 @@ internal sealed class Lexer
     }
 
     public IToken GetToken()
+    {
+        var token = TryGetToken();
+        if (token == null)
+        {
+            throw new DrainedError(_idx);
+        }
+        return token;
+    }
+
+    public IToken? TryGetToken()
     {
         while (_idx < _source.Length)
         {
@@ -100,7 +110,7 @@ internal sealed class Lexer
                 throw new LexerError(_idx);
             }
         }
-        throw new DrainedError(_idx);
+        return null;
     }
 
     private static IToken CreateKeyword(string name, int index)
@@ -138,6 +148,8 @@ internal sealed class Lexer
         {
             case "->":
                 return new OperatorPropOf();
+            case ".":
+                return new OperatorDot();
             case "+":
                 return new OperatorPlus();
             case "-":

@@ -55,6 +55,7 @@ public class LexerTests
     }
 
     [Theory]
+    [InlineData(".", nameof(OperatorDot))]
     [InlineData("+", nameof(OperatorPlus))]
     [InlineData("-", nameof(OperatorMinus))]
     [InlineData("*", nameof(OperatorMultiply))]

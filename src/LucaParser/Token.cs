@@ -47,6 +47,10 @@ public class OperatorPropOf : IToken
 {
     public TokenType Type => TokenType.Operator;
 }
+public class OperatorDot : IToken
+{
+    public TokenType Type => TokenType.Operator;
+}
 public class OperatorPlus : IToken
 {
     public TokenType Type => TokenType.Operator;
