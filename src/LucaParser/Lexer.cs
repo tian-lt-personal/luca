@@ -44,11 +44,12 @@ public class BadIntegerLiteral : LexerError
     }
 }
 
-internal class Lexer
+internal sealed class Lexer
 {
     private const string _pattern =
         @"(?<Keyword>\b(if|then|else|curexpr)\b)|" +
-        @"(?<IntegerLiteral>\d+)|" +
+        @"(?<Identifier>[A-z_a-z][\w_]*)|" +
+        @"(?<IntegerLiteral>\b\d+\b)|" +
         @"(?<Operator>->|!=|[\+\-\*/=<>%\(\)])|" +
         @"(?<Ws>\s+)";
     private readonly string _source;
@@ -85,6 +86,8 @@ internal class Lexer
                                     return CreateIntegerLiteral(group.Value, idx);
                                 case "Operator":
                                     return CreateOperator(group.Value, idx);
+                                case "Identifier":
+                                    return new Identifier(group.Value);
                                 default:
                                     throw new ArgumentException();
                             }

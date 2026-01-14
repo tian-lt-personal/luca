@@ -11,19 +11,36 @@ public class LexerTests
     [InlineData("  ")]
     [InlineData("\n")]
     [InlineData("\r\n")]
-    [InlineData("bad_keyword")]
+    [InlineData("123b")]
     public void BadSource(string source)
     {
         bool failed = false;
+        IToken? token = null;
         try
         {
-            new Lexer(source).GetToken();
+            token = new Lexer(source).GetToken();
         }
         catch (LexerError)
         {
             failed = true;
         }
-        Assert.True(failed);
+        if (!failed)
+        {
+            Assert.NotEqual(TokenType.Keyword, token!.Type);
+        }
+    }
+
+    [Theory]
+    [InlineData("a")]
+    [InlineData("_")]
+    [InlineData("abc_")]
+    [InlineData("_abc")]
+    [InlineData("a123")]
+    [InlineData("a123b")]
+    public void Identifier(string source)
+    {
+        var id = (Identifier)new Lexer(source).GetToken();
+        Assert.Equal(source, id.Name);
     }
 
     [Theory]
@@ -71,6 +88,7 @@ public class LexerTests
     [Theory]
     [InlineData("if", nameof(KeywordIf))]
     [InlineData("if then", nameof(KeywordIf), nameof(KeywordThen))]
+    [InlineData("if a then b", nameof(KeywordIf), nameof(Identifier), nameof(KeywordThen), nameof(Identifier))]
     [InlineData("if then else", nameof(KeywordIf), nameof(KeywordThen), nameof(KeywordElse))]
     [InlineData("1 else", nameof(IntegerLiteral), nameof(KeywordElse))]
     [InlineData("curexpr 001 if 3", nameof(KeywordCurexpr), nameof(IntegerLiteral), nameof(KeywordIf), nameof(IntegerLiteral))]

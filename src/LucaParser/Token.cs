@@ -16,6 +16,16 @@ public class IntegerLiteral : IToken
     }
 }
 
+public class Identifier : IToken
+{
+    public TokenType Type => TokenType.Identifier;
+    public string Name { get; init; }
+    public Identifier(string name)
+    {
+        Name = name;
+    }
+}
+
 public class KeywordIf : IToken
 {
     public TokenType Type => TokenType.Keyword;
