@@ -34,9 +34,11 @@ $specifier$ can be one of the following items:
 
 # Expressions
 
-$epxr = expr~|~\text{(}expr\text{)}~|~value~|~abstraction~|~application$  
+$epxr = term~|~ifstatement~|~arithmetic~|~abstraction~|~application$  
 $abstraction = var. expr$  
 $application = expr~expr$  
+$term = id~|~value~|~\text{(}expr\text{)}$  
+$arithmetic = expr~binary\_operator~expr~|~unary\_operator~expr $
 
 Examples:
 

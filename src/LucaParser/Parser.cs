@@ -31,23 +31,70 @@ public sealed class OneTimeParser
     {
         if (_tok.Type == TokenType.Identifier && _tokNext is OperatorDot)
         {
-            return ParseAbstraction();
+            return ParseFunc();
         }
-
-        throw new NotImplementedException();
+        return ParseEval();
     }
 
-    private AbstractionExpr ParseAbstraction()
+    private FunctionExpr ParseFunc()
     {
         // expect identifier
         ExpectToken<Identifier>(_tok);
         var param = (Identifier)_tok;
         MoveNext();
+
         // expect dot
         ExpectToken<OperatorDot>(_tok);
         MoveNext();
         var body = ParseExpr();
-        return new AbstractionExpr { Var = param, Def = body };
+        MoveNext();
+        return new FunctionExpr { Var = param, Def = body };
+    }
+
+    private IExpr ParseEval()
+    {
+        if (_tok is OperatorMinus)
+        { // unary minus
+        }
+
+        do
+        {
+            var term = ParseTerm();
+            if (IsArithmeticOperator(_tok))
+            {
+                ParseArithmetic();
+            }
+        }
+        while (true);
+
+        //return term;
+    }
+
+    private Term ParseTerm()
+    {
+        if (_tok is Identifier id)
+        {
+            MoveNext();
+            return new IdTerm { Id = id };
+        }
+        else if (_tok is IntegerLiteral intVal)
+        {
+            MoveNext();
+            return new ValueTerm { Value = intVal };
+        }
+        else if (_tok is OperatorLeftParen)
+        {
+            var expr = ParseExpr();
+            ExpectToken<OperatorRightParen>(_tok);
+            MoveNext();
+            return new ParenTerm { InnerExpr = expr };
+        }
+        throw new ParseError();
+    }
+
+    private IExpr ParseArithmetic()
+    {
+        throw new NotImplementedException();
     }
 
     private IToken MoveNext()
@@ -55,6 +102,11 @@ public sealed class OneTimeParser
         _tok = _tokNext!;
         _tokNext = _lex.TryGetToken();
         return _tok;
+    }
+
+    private static bool IsArithmeticOperator(IToken token)
+    {
+        return token is OperatorPlus or OperatorMinus or OperatorMultiply or OperatorDivide;
     }
 
     private static void ExpectToken<T>(IToken token) where T : IToken
