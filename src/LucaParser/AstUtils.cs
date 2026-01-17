@@ -18,12 +18,6 @@ public static class AstUtils
         }
         else if (node is ParenTerm paren)
         {
-            //builder.Append($"[paren:\n");
-            //AppendMargin(builder, level + 1);
-            //builder.Append($"{Dump(paren.InnerExpr, level + 1)}\n");
-            //AppendMargin(builder, level);
-            //builder.Append(" -- paren]");
-
             builder.Append($"[paren: {Dump(paren.InnerExpr, level + 1)}]");
         }
         else if (node is EvalExpr eval)
