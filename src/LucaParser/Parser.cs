@@ -32,14 +32,14 @@ public sealed class OneTimeParser
         IExpr left;
         if (IsUnaryArithmeticOperator(_tok))
         {
-            left = ParseArithmetic(null);
+            left = ParseArithmeticExpr(null, 0);
         }
         else
         {
             var term = ParseTerm();
             if (IsBinaryArithmeticOperator(_tok))
             {
-                left = ParseArithmetic(term);
+                left = ParseArithmeticExpr(term, 0);
             }
             else
             {
@@ -57,7 +57,7 @@ public sealed class OneTimeParser
             IExpr? right;
             if (IsUnaryArithmeticOperator(_tok))
             {
-                right = ParseArithmetic(null);
+                right = ParseArithmeticExpr(null, 0);
             }
             else
             {
@@ -68,7 +68,7 @@ public sealed class OneTimeParser
                 }
                 if (IsBinaryArithmeticOperator(_tok))
                 {
-                    right = ParseArithmetic(term);
+                    right = ParseArithmeticExpr(term, 0);
                 }
                 else
                 {
@@ -81,19 +81,35 @@ public sealed class OneTimeParser
         while (true);
     }
 
-    private IExpr ParseArithmetic(Term? beginning)
+    private IExpr ParseArithmeticExpr(Term? beginning, int minPrecedence)
     {
-        if (_tok is OperatorMinus op)
-        { // unary minus
-            MoveNext();
-            var term = ParseTerm();
-            return new UnaryOpExpr { Operator = op, Term = term! };
+        IExpr left;
+        if (beginning == null)
+        {
+            if (_tok is OperatorMinus op)
+            { // unary minus
+                MoveNext();
+                var term = ParseTerm();
+                left = new UnaryOpExpr { Operator = op, Term = term! };
+            }
+            else
+            {
+                left = ParseTerm();
+            }
         }
         else
         {
-            var term = ParseTerm();
+            left = beginning;
         }
-        throw new NotImplementedException();
+
+        while (IsBinaryArithmeticOperator(_tok) && GetPrecedence(_tok) > minPrecedence)
+        {
+            var op = _tok;
+            MoveNext();
+            var right = ParseArithmeticExpr(null, GetPrecedence(op));
+            left = new BinaryOpExpr { Operator = op, Left = left, Right = right };
+        }
+        return left;
     }
 
     private Term ParseTerm()
@@ -161,6 +177,16 @@ public sealed class OneTimeParser
     private static bool IsBinaryArithmeticOperator(IToken token)
     {
         return token is OperatorPlus or OperatorMinus or OperatorMultiply or OperatorDivide;
+    }
+
+    private static int GetPrecedence(IToken token)
+    {
+        return token switch
+        {
+            OperatorPlus or OperatorMinus => 10,
+            OperatorMultiply or OperatorDivide => 20,
+            _ => throw new ParseError(),
+        };
     }
 
     private static void ExpectToken<T>(IToken token) where T : IToken

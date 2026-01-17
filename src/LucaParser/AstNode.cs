@@ -36,5 +36,7 @@ public class UnaryOpExpr : ArithmeticExpr
 }
 public class BinaryOpExpr : ArithmeticExpr
 {
-
+    public required IToken Operator { get; init; }
+    public required IExpr Left { get; init; }
+    public required IExpr Right { get; init; }
 }

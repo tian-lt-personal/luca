@@ -49,4 +49,18 @@ public class ParserTests
         }
         Assert.Fail("Expected ParseError");
     }
+
+    [Theory]
+    [InlineData("1")]
+    [InlineData("1+2")]
+    [InlineData("x+y+z")]
+    [InlineData("x+y*z")]
+    [InlineData("x*y/z")]
+    [InlineData("x*y-z")]
+    [InlineData("(x+y*z)-(u+v)")]
+    public void ArithmeticExpr(string source)
+    {
+        var parser = new OneTimeParser(source);
+        var tree = parser.RunPass();
+    }
 }
