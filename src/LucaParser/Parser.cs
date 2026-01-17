@@ -20,7 +20,7 @@ public sealed class OneTimeParser
     public IExpr RunPass()
     {
         var expr = ParseExpr();
-        if (_tokNext != null)
+        if (_tok != null)
         {
             throw new ParseError();
         }
@@ -29,51 +29,89 @@ public sealed class OneTimeParser
 
     private IExpr ParseExpr()
     {
-        if (_tok.Type == TokenType.Identifier && _tokNext is OperatorDot)
+        IExpr left;
+        if (IsUnaryArithmeticOperator(_tok))
         {
-            return ParseFunc();
+            left = ParseArithmetic(null);
         }
-        return ParseEval();
-    }
-
-    private FunctionExpr ParseFunc()
-    {
-        // expect identifier
-        ExpectToken<Identifier>(_tok);
-        var param = (Identifier)_tok;
-        MoveNext();
-
-        // expect dot
-        ExpectToken<OperatorDot>(_tok);
-        MoveNext();
-        var body = ParseExpr();
-        MoveNext();
-        return new FunctionExpr { Var = param, Def = body };
-    }
-
-    private IExpr ParseEval()
-    {
-        if (_tok is OperatorMinus)
-        { // unary minus
+        else
+        {
+            var term = ParseTerm();
+            if (IsBinaryArithmeticOperator(_tok))
+            {
+                left = ParseArithmetic(term);
+            }
+            else
+            {
+                left = term;
+            }
         }
 
         do
         {
-            var term = ParseTerm();
-            if (IsArithmeticOperator(_tok))
+            if (_tok is OperatorRightParen)
             {
-                ParseArithmetic();
+                return left;
             }
+
+            IExpr? right;
+            if (IsUnaryArithmeticOperator(_tok))
+            {
+                right = ParseArithmetic(null);
+            }
+            else
+            {
+                var term = TryParseTerm();
+                if (term == null)
+                {
+                    return left;
+                }
+                if (IsBinaryArithmeticOperator(_tok))
+                {
+                    right = ParseArithmetic(term);
+                }
+                else
+                {
+                    right = term;
+                }
+            }
+
+            left = new EvalExpr { Functor = left, Argument = right };
         }
         while (true);
+    }
 
-        //return term;
+    private IExpr ParseArithmetic(Term? beginning)
+    {
+        if (_tok is OperatorMinus op)
+        { // unary minus
+            MoveNext();
+            var term = ParseTerm();
+            return new UnaryOpExpr { Operator = op, Term = term! };
+        }
+        else
+        {
+            var term = ParseTerm();
+        }
+        throw new NotImplementedException();
     }
 
     private Term ParseTerm()
     {
+        var term = TryParseTerm();
+        ExpectTrue(term != null);
+        return term!;
+    }
+
+    private Term? TryParseTerm()
+    {
+
         if (_tok is Identifier id)
         {
+            if (_tokNext is OperatorDot)
+            {
+                return ParseFunc();
+            }
             MoveNext();
             return new IdTerm { Id = id };
         }
@@ -84,17 +122,28 @@ public sealed class OneTimeParser
         }
         else if (_tok is OperatorLeftParen)
         {
+            MoveNext();
             var expr = ParseExpr();
             ExpectToken<OperatorRightParen>(_tok);
             MoveNext();
             return new ParenTerm { InnerExpr = expr };
         }
-        throw new ParseError();
+        return null;
     }
 
-    private IExpr ParseArithmetic()
+    private FunctionTerm ParseFunc()
     {
-        throw new NotImplementedException();
+        // expect identifier
+        ExpectToken<Identifier>(_tok);
+        var param = (Identifier)_tok;
+        MoveNext();
+
+        // expect dot
+        ExpectToken<OperatorDot>(_tok);
+        MoveNext();
+        var body = ParseExpr();
+        //MoveNext();
+        return new FunctionTerm { Var = param, Def = body };
     }
 
     private IToken MoveNext()
@@ -104,7 +153,12 @@ public sealed class OneTimeParser
         return _tok;
     }
 
-    private static bool IsArithmeticOperator(IToken token)
+    private static bool IsUnaryArithmeticOperator(IToken token)
+    {
+        return token is OperatorMinus or OperatorPlus;
+    }
+
+    private static bool IsBinaryArithmeticOperator(IToken token)
     {
         return token is OperatorPlus or OperatorMinus or OperatorMultiply or OperatorDivide;
     }
@@ -112,5 +166,10 @@ public sealed class OneTimeParser
     private static void ExpectToken<T>(IToken token) where T : IToken
     {
         if (token is not T) throw new ParseError();
+    }
+
+    private static void ExpectTrue(bool expr)
+    {
+        if (!expr) throw new ParseError();
     }
 }
