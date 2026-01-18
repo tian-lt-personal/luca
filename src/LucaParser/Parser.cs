@@ -17,14 +17,32 @@ public sealed class OneTimeParser
         _tokNext = _lex.TryGetToken();
     }
 
-    public IExpr RunPass()
+    public IEnumerable<IStmt> ParseProgram()
     {
-        var expr = ParseExpr();
-        if (_tok != null)
+        while (_tok != null)
         {
-            throw new ParseError();
+            if (_tok is KeywordLet)
+            {
+                MoveNext();
+                ExpectToken<IdentifierToken>(_tok);
+                var id = (IdentifierToken)_tok;
+                MoveNext();
+                ExpectToken<OperatorEq>(_tok);
+                MoveNext();
+                var expr = ParseExpr();
+                ExpectToken<OperatorSemicolon>(_tok);
+                MoveNext();
+                yield return new NamingStmt { Name = id, Value = expr };
+            }
+            else
+            {
+                var expr = ParseExpr();
+                ExpectToken<OperatorSemicolon>(_tok);
+                MoveNext();
+                yield return new ExprStmt { Expr = expr };
+            }
         }
-        return expr;
+        yield break;
     }
 
     private IExpr ParseExpr()
@@ -49,7 +67,7 @@ public sealed class OneTimeParser
 
         do
         {
-            if (_tok is OperatorRightParen)
+            if (_tok is OperatorRightParen or OperatorSemicolon)
             {
                 return left;
             }

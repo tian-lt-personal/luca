@@ -47,7 +47,7 @@ public class BadIntegerLiteral : LexerError
 internal sealed class Lexer
 {
     private const string _pattern =
-        @"(?<Keyword>\b(if|then|else|curexpr)\b)|" +
+        @"(?<Keyword>\b(let|if|then|else|curexpr)\b)|" +
         @"(?<Identifier>[A-z_a-z][\w_]*)|" +
         @"(?<IntegerLiteral>\b\d+\b)|" +
         @"(?<Operator>->|!=|[.\+\-\*/=<>%\(\);])|" +
@@ -125,6 +125,8 @@ internal sealed class Lexer
                 return new KeywordElse();
             case "curexpr":
                 return new KeywordCurexpr();
+            case "let":
+                return new KeywordLet();
             default:
                 throw new BadKeywordError(index, name);
         }
@@ -168,6 +170,8 @@ internal sealed class Lexer
                 return new OperatorLeftParen();
             case ")":
                 return new OperatorRightParen();
+            case ";":
+                return new OperatorSemicolon();
             default:
                 throw new BadOperatorError(index, name);
         }

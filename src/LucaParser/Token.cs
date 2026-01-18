@@ -25,6 +25,7 @@ public class IdentifierToken : IToken
 }
 
 public abstract class KeywordToken : IToken { }
+public class KeywordLet : IToken { }
 public class KeywordIf : IToken { }
 public class KeywordThen : IToken { }
 public class KeywordElse : IToken { }
@@ -42,3 +43,4 @@ public class OperatorEq : IToken { }
 public class OperatorNe : IToken { }
 public class OperatorLeftParen : IToken { }
 public class OperatorRightParen : IToken { }
+public class OperatorSemicolon : IToken { }

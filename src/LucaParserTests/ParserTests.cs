@@ -6,43 +6,45 @@ namespace Luca.UnitTesting;
 public class ParserTests
 {
     [Theory]
-    [InlineData("x")]
-    [InlineData("(x)")]
-    [InlineData("x y")]
-    [InlineData("x.x")]
-    [InlineData("x.(x)")]
-    [InlineData("(x.x)")]
-    [InlineData("y.x.x y")]
-    [InlineData("(y.x.x) y")]
-    [InlineData("x y z")]
-    [InlineData("(x y z)")]
-    [InlineData("(x y) z")]
-    [InlineData("x (y z)")]
-    [InlineData("(x (y z))")]
+    [InlineData("x;")]
+    [InlineData("(x);")]
+    [InlineData("x y;")]
+    [InlineData("x.x;")]
+    [InlineData("x.(x);")]
+    [InlineData("(x.x);")]
+    [InlineData("y.x.x y;")]
+    [InlineData("(y.x.x) y;")]
+    [InlineData("x y z;")]
+    [InlineData("(x y z);")]
+    [InlineData("(x y) z;")]
+    [InlineData("x (y z);")]
+    [InlineData("(x (y z));")]
     public void BasicExpr(string source)
     {
         var parser = new OneTimeParser(source);
-        var tree = parser.RunPass();
+        var prog = parser.ParseProgram().ToArray();
     }
 
     [Theory]
-    [InlineData("(")]
-    [InlineData(")")]
-    [InlineData("(x")]
-    [InlineData("x)")]
-    [InlineData("x.")]
-    [InlineData(".x")]
-    [InlineData(".x.")]
-    [InlineData("(.x.")]
-    [InlineData(".x.)")]
-    [InlineData("x.y.")]
-    [InlineData(".x.y.")]
+    [InlineData("x")]
+    //[InlineData("let;")]
+    [InlineData("(;")]
+    [InlineData(");")]
+    [InlineData("(x;")]
+    [InlineData("x);")]
+    [InlineData("x.;")]
+    [InlineData(".x;")]
+    [InlineData(".x.;")]
+    [InlineData("(.x.;")]
+    [InlineData(".x.);")]
+    [InlineData("x.y.;")]
+    [InlineData(".x.y.;")]
     public void BadExpr(string source)
     {
         try
         {
             var parser = new OneTimeParser(source);
-            parser.RunPass();
+            parser.ParseProgram().ToArray();
         }
         catch (ParseError)
         {
@@ -52,16 +54,29 @@ public class ParserTests
     }
 
     [Theory]
-    [InlineData("1")]
-    [InlineData("1+2")]
-    [InlineData("x+y+z")]
-    [InlineData("x+y*z")]
-    [InlineData("x*y/z")]
-    [InlineData("x*y-z")]
-    [InlineData("(x+y*z)-(u+v)")]
+    [InlineData("1;")]
+    [InlineData("1+2;")]
+    [InlineData("x+y+z;")]
+    [InlineData("x+y*z;")]
+    [InlineData("x*y/z;")]
+    [InlineData("x*y-z;")]
+    [InlineData("(x+y*z)-(u+v);")]
     public void ArithmeticExpr(string source)
     {
         var parser = new OneTimeParser(source);
-        var tree = parser.RunPass();
+        var prog = parser.ParseProgram().ToArray();
+    }
+
+    [Theory]
+    [InlineData("x;", 1)]
+    [InlineData("a; a+b;", 2)]
+    [InlineData("a;\n   a+b;", 2)]
+    [InlineData("let a = 1; let c= a+b; c;", 3)]
+    public void StmtSequence(string source, int seqLen)
+    {
+
+        var parser = new OneTimeParser(source);
+        var prog = parser.ParseProgram().ToArray();
+        Assert.Equal(seqLen, prog.Length);
     }
 }

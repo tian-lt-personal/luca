@@ -48,6 +48,7 @@ public class LexerTests
     [InlineData("then", nameof(KeywordThen))]
     [InlineData("else", nameof(KeywordElse))]
     [InlineData("curexpr", nameof(KeywordCurexpr))]
+    [InlineData("let", nameof(KeywordLet))]
     public void Keywords(string source, string expectedType)
     {
         var token = new Lexer(source).GetToken();
@@ -64,6 +65,7 @@ public class LexerTests
     [InlineData("(", nameof(OperatorLeftParen))]
     [InlineData(")", nameof(OperatorRightParen))]
     [InlineData("=", nameof(OperatorEq))]
+    [InlineData(";", nameof(OperatorSemicolon))]
     [InlineData("!=", nameof(OperatorNe))]
     [InlineData("->", nameof(OperatorPropOf))]
     public void Operators(string source, string expectedType)
