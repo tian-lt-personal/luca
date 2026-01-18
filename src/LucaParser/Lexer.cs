@@ -50,7 +50,7 @@ internal sealed class Lexer
         @"(?<Keyword>\b(if|then|else|curexpr)\b)|" +
         @"(?<Identifier>[A-z_a-z][\w_]*)|" +
         @"(?<IntegerLiteral>\b\d+\b)|" +
-        @"(?<Operator>->|!=|[.\+\-\*/=<>%\(\)])|" +
+        @"(?<Operator>->|!=|[.\+\-\*/=<>%\(\);])|" +
         @"(?<Ws>\s+)";
     private readonly string _source;
     private readonly Regex _dfa;
@@ -97,7 +97,7 @@ internal sealed class Lexer
                                 case "Operator":
                                     return CreateOperator(group.Value, idx);
                                 case "Identifier":
-                                    return new Identifier(group.Value);
+                                    return new IdentifierToken(group.Value);
                                 default:
                                     throw new ArgumentException();
                             }

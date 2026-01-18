@@ -122,7 +122,7 @@ public sealed class OneTimeParser
     private Term? TryParseTerm()
     {
 
-        if (_tok is Identifier id)
+        if (_tok is IdentifierToken id)
         {
             if (_tokNext is OperatorDot)
             {
@@ -150,8 +150,8 @@ public sealed class OneTimeParser
     private FunctionTerm ParseFunc()
     {
         // expect identifier
-        ExpectToken<Identifier>(_tok);
-        var param = (Identifier)_tok;
+        ExpectToken<IdentifierToken>(_tok);
+        var param = (IdentifierToken)_tok;
         MoveNext();
 
         // expect dot

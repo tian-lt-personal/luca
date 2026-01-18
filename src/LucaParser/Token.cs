@@ -2,12 +2,11 @@ namespace Luca.Parser;
 
 public interface IToken
 {
-    public TokenType Type { get; }
 }
 
-public class IntegerLiteral : IToken
+public abstract class LiteralToken : IToken { }
+public class IntegerLiteral : LiteralToken
 {
-    public TokenType Type => TokenType.IntegerLiteral;
     public int Value { get; init; }
 
     public IntegerLiteral(string value)
@@ -16,74 +15,30 @@ public class IntegerLiteral : IToken
     }
 }
 
-public class Identifier : IToken
+public class IdentifierToken : IToken
 {
-    public TokenType Type => TokenType.Identifier;
     public string Name { get; init; }
-    public Identifier(string name)
+    public IdentifierToken(string name)
     {
         Name = name;
     }
 }
 
-public class KeywordIf : IToken
-{
-    public TokenType Type => TokenType.Keyword;
-}
-public class KeywordThen : IToken
-{
-    public TokenType Type => TokenType.Keyword;
-}
-public class KeywordElse : IToken
-{
-    public TokenType Type => TokenType.Keyword;
-}
-public class KeywordCurexpr : IToken
-{
-    public TokenType Type => TokenType.Keyword;
-}
+public abstract class KeywordToken : IToken { }
+public class KeywordIf : IToken { }
+public class KeywordThen : IToken { }
+public class KeywordElse : IToken { }
+public class KeywordCurexpr : IToken { }
 
-public class OperatorPropOf : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorDot : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorPlus : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorMinus : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorMultiply : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorDivide : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorRem : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorEq : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorNe : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorLeftParen : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
-public class OperatorRightParen : IToken
-{
-    public TokenType Type => TokenType.Operator;
-}
+public abstract class OperatorToken : IToken { }
+public class OperatorPropOf : IToken { }
+public class OperatorDot : IToken { }
+public class OperatorPlus : IToken { }
+public class OperatorMinus : IToken { }
+public class OperatorMultiply : IToken { }
+public class OperatorDivide : IToken { }
+public class OperatorRem : IToken { }
+public class OperatorEq : IToken { }
+public class OperatorNe : IToken { }
+public class OperatorLeftParen : IToken { }
+public class OperatorRightParen : IToken { }

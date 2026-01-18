@@ -26,7 +26,7 @@ public class LexerTests
         }
         if (!failed)
         {
-            Assert.NotEqual(TokenType.Keyword, token!.Type);
+            Assert.True(token is not KeywordToken);
         }
     }
 
@@ -39,7 +39,7 @@ public class LexerTests
     [InlineData("a123b")]
     public void Identifier(string source)
     {
-        var id = (Identifier)new Lexer(source).GetToken();
+        var id = (IdentifierToken)new Lexer(source).GetToken();
         Assert.Equal(source, id.Name);
     }
 
@@ -89,7 +89,7 @@ public class LexerTests
     [Theory]
     [InlineData("if", nameof(KeywordIf))]
     [InlineData("if then", nameof(KeywordIf), nameof(KeywordThen))]
-    [InlineData("if a then b", nameof(KeywordIf), nameof(Identifier), nameof(KeywordThen), nameof(Identifier))]
+    [InlineData("if a then b", nameof(KeywordIf), nameof(IdentifierToken), nameof(KeywordThen), nameof(IdentifierToken))]
     [InlineData("if then else", nameof(KeywordIf), nameof(KeywordThen), nameof(KeywordElse))]
     [InlineData("1 else", nameof(IntegerLiteral), nameof(KeywordElse))]
     [InlineData("curexpr 001 if 3", nameof(KeywordCurexpr), nameof(IntegerLiteral), nameof(KeywordIf), nameof(IntegerLiteral))]
