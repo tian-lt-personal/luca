@@ -24,7 +24,7 @@ public static class AstUtils
         {
             builder.Append($"[eval:\n");
             AppendMargin(builder, level + 1);
-            builder.Append($".functor = {Dump(eval.Functor, level + 1)}\n");
+            builder.Append($".functor = {Dump(eval.Function, level + 1)}\n");
             AppendMargin(builder, level + 1);
             builder.Append($".argument = {Dump(eval.Argument, level + 1)}\n");
             AppendMargin(builder, level);

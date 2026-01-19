@@ -94,7 +94,7 @@ public sealed class OneTimeParser
                 }
             }
 
-            left = new EvalExpr { Functor = left, Argument = right };
+            left = new EvalExpr { Function = left, Argument = right };
         }
         while (true);
     }

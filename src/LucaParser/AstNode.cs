@@ -25,7 +25,7 @@ public class FunctionTerm : Term
 
 public class EvalExpr : IExpr
 {
-    public required IExpr Functor { get; init; }
+    public required IExpr Function { get; init; }
     public required IExpr Argument { get; init; }
 }
 

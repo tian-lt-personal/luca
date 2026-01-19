@@ -1,5 +1,4 @@
 using Luca.Parser;
-using Luca.Parser.Ast;
 
 namespace Luca.Cli;
 
@@ -28,7 +27,7 @@ public static class Program
                     {
                         if (print)
                         {
-                            Console.WriteLine(AstUtils.Dump(result));
+                            Console.WriteLine(Machine.Dump(result));
                         }
                     }
                 }
