@@ -152,7 +152,7 @@ public sealed class OneTimeParser
         else if (_tok is IntegerLiteral intVal)
         {
             MoveNext();
-            return new ValueTerm { Value = intVal };
+            return new IntValueTerm { Value = intVal.Value };
         }
         else if (_tok is OperatorLeftParen)
         {

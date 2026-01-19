@@ -2,15 +2,16 @@ namespace Luca.Parser.Ast;
 
 public interface IExpr { }
 
-public class Term : IExpr { }
+public abstract class Term : IExpr { }
 
 public class IdTerm : Term
 {
     public required IdentifierToken Id { get; init; }
 }
-public class ValueTerm : Term
+public abstract class ValueTerm : Term { }
+public class IntValueTerm : ValueTerm
 {
-    public required IntegerLiteral Value { get; init; }
+    public required int Value { get; init; }
 }
 public class ParenTerm : Term
 {
@@ -28,7 +29,7 @@ public class EvalExpr : IExpr
     public required IExpr Argument { get; init; }
 }
 
-public class ArithmeticExpr : IExpr { }
+public abstract class ArithmeticExpr : IExpr { }
 public class UnaryOpExpr : ArithmeticExpr
 {
     public required IToken Operator { get; init; }

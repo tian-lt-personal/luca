@@ -53,7 +53,7 @@ public static class AstUtils
 
     public static string Dump(ValueTerm term)
     {
-        if (term.Value is IntegerLiteral intVal)
+        if (term is IntValueTerm intVal)
         {
             return $"[value-int: {intVal.Value}]";
         }
