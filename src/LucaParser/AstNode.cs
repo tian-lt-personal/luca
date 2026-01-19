@@ -43,9 +43,9 @@ public class BinaryOpExpr : ArithmeticExpr
 
 public interface IStmt { }
 
-public class NamingStmt : IStmt
+public class NamedStmt : IStmt
 {
-    public required IdentifierToken Name { get; init; }
+    public required IdentifierToken Id { get; init; }
     public required IExpr Value { get; init; }
 }
 

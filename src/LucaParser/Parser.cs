@@ -32,7 +32,7 @@ public sealed class OneTimeParser
                 var expr = ParseExpr();
                 ExpectToken<OperatorSemicolon>(_tok);
                 MoveNext();
-                yield return new NamingStmt { Name = id, Value = expr };
+                yield return new NamedStmt { Id = id, Value = expr };
             }
             else
             {
@@ -176,7 +176,6 @@ public sealed class OneTimeParser
         ExpectToken<OperatorDot>(_tok);
         MoveNext();
         var body = ParseExpr();
-        //MoveNext();
         return new FunctionTerm { Var = param, Def = body };
     }
 
