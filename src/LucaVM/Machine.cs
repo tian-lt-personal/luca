@@ -71,13 +71,13 @@ public sealed class Machine
         {
             if (stmt is NamedStmt nstmt)
             {
-                var res = Evaluate(nstmt.Value, _topEnv);
+                var res = Trampoline.Run(Evaluate(nstmt.Value, _topEnv));
                 _topEnv.Define(nstmt.Id.Name, res);
                 yield return res;
             }
             else if (stmt is ExprStmt estmt)
             {
-                var res = Evaluate(estmt.Expr, _topEnv);
+                var res = Trampoline.Run(Evaluate(estmt.Expr, _topEnv));
                 yield return res;
             }
         }
@@ -100,14 +100,14 @@ public sealed class Machine
         }
     }
 
-    private IExpr Evaluate(IExpr expr, Env env)
+    private async LazyTask<IExpr> Evaluate(IExpr expr, Env env)
     {
         return expr switch
         {
-            EvalExpr evalExpr => Evaluate(Evaluate(evalExpr.Function, env), Evaluate(evalExpr.Argument, env)),
-            ArithmeticExpr mathExpr => Evaluate(mathExpr, env),
+            EvalExpr evalExpr => await Evaluate(await Evaluate(evalExpr.Function, env), await Evaluate(evalExpr.Argument, env)),
+            ArithmeticExpr mathExpr => await Evaluate(mathExpr, env),
             ValueTerm val => val,
-            ParenTerm paren => Evaluate(paren.InnerExpr, env),
+            ParenTerm paren => await Evaluate(paren.InnerExpr, env),
             IdTerm id => env.Lookup(id.Id.Name),
             FunctionTerm func => new Closure
             {
@@ -118,20 +118,20 @@ public sealed class Machine
             _ => throw new NotImplementedException()
         };
     }
-    private IExpr Evaluate(IExpr functor, IExpr argument)
+    private async LazyTask<IExpr> Evaluate(IExpr functor, IExpr argument)
     {
         ExpectNode<Closure>(functor);
         var f = (Closure)functor;
         var env = new Env(f.Env);
         env.Define(f.VarName, argument);
-        return Evaluate(f.Body, env);
+        return await Evaluate(f.Body, env);
     }
-    private IExpr Evaluate(ArithmeticExpr mathExpr, Env env)
+    private async LazyTask<IExpr> Evaluate(ArithmeticExpr mathExpr, Env env)
     {
         if (mathExpr is BinaryOpExpr binaryExpr)
         {
-            var left = Evaluate(binaryExpr.Left, env);
-            var right = Evaluate(binaryExpr.Right, env);
+            var left = await Evaluate(binaryExpr.Left, env);
+            var right = await Evaluate(binaryExpr.Right, env);
             ExpectNode<IntValueTerm>(left);
             ExpectNode<IntValueTerm>(right);
 
@@ -154,7 +154,7 @@ public sealed class Machine
         }
         else if (mathExpr is UnaryOpExpr unaryExpr)
         {
-            var term = Evaluate(unaryExpr.Term, env);
+            var term = await Evaluate(unaryExpr.Term, env);
             ExpectNode<IntValueTerm>(term);
             ExpectTrue(unaryExpr.Operator is OperatorMinus);
             return new IntValueTerm { Value = -((IntValueTerm)term).Value };

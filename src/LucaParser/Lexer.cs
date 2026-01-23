@@ -138,7 +138,7 @@ internal sealed class Lexer
         {
             return new IntegerLiteral(literal);
         }
-        catch (FormatException)
+        catch (Exception)
         {
             throw new BadIntegerLiteral(index, literal);
         }
