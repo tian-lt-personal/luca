@@ -228,15 +228,26 @@ public sealed class OneTimeParser
 
     private static bool IsBinaryArithmeticOperator(IToken token)
     {
-        return token is OperatorPlus or OperatorMinus or OperatorMultiply or OperatorDivide;
+        return token is
+            OperatorPlus or
+            OperatorMinus or
+            OperatorMultiply or
+            OperatorDivide or
+            OperatorEq or
+            OperatorNe or
+            OperatorGt or
+            OperatorLt;
     }
 
     private static int GetPrecedence(IToken token)
     {
         return token switch
         {
-            OperatorPlus or OperatorMinus => 10,
-            OperatorMultiply or OperatorDivide => 20,
+            OperatorEq or OperatorNe => 10,
+            OperatorAnd or OperatorOr => 20,
+            OperatorGt or OperatorLt => 30,
+            OperatorPlus or OperatorMinus => 40,
+            OperatorMultiply or OperatorDivide => 50,
             _ => throw new ParseError(),
         };
     }

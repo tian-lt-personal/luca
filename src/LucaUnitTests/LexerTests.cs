@@ -68,6 +68,10 @@ public class LexerTests
     [InlineData(";", nameof(OperatorSemicolon))]
     [InlineData("!=", nameof(OperatorNe))]
     [InlineData("->", nameof(OperatorPropOf))]
+    [InlineData("&&", nameof(OperatorAnd))]
+    [InlineData("||", nameof(OperatorOr))]
+    [InlineData(">", nameof(OperatorGt))]
+    [InlineData("<", nameof(OperatorLt))]
     public void Operators(string source, string expectedType)
     {
         var token = new Lexer(source).GetToken();

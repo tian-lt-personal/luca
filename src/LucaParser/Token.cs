@@ -47,6 +47,8 @@ public class OperatorEq : IToken { }
 public class OperatorNe : IToken { }
 public class OperatorGt : IToken { }
 public class OperatorLt : IToken { }
+public class OperatorAnd : IToken { }
+public class OperatorOr : IToken { }
 public class OperatorLeftParen : IToken { }
 public class OperatorRightParen : IToken { }
 public class OperatorSemicolon : IToken { }

@@ -53,11 +53,12 @@ public static class AstUtils
 
     public static string Dump(ValueTerm term)
     {
-        if (term is IntValueTerm intVal)
+        return term switch
         {
-            return $"[value-int: {intVal.Value}]";
-        }
-        return "!!! error value term !!!";
+            IntValueTerm intVal => $"[int: {intVal.Value}]",
+            BoolValueTerm bVal => $"[bool: {bVal.Value}]",
+            _ => "!!! error value term !!!"
+        };
     }
 
     public static string DumpOp(IToken op)

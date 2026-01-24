@@ -131,24 +131,124 @@ public sealed class Machine
     {
         if (mathExpr is BinaryOpExpr binaryExpr)
         {
-            var left = await Evaluate(binaryExpr.Left, env);
-            var right = await Evaluate(binaryExpr.Right, env);
-            ExpectNode<IntValueTerm>(left);
-            ExpectNode<IntValueTerm>(right);
-
-            var leftVal = ((IntValueTerm)left).Value;
-            var rightVal = ((IntValueTerm)right).Value;
-
             switch (binaryExpr.Operator)
             {
                 case OperatorPlus:
-                    return new IntValueTerm { Value = leftVal + rightVal };
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new IntValueTerm { Value = ((IntValueTerm)left).Value + ((IntValueTerm)right).Value };
+                    }
                 case OperatorMinus:
-                    return new IntValueTerm { Value = leftVal - rightVal };
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new IntValueTerm { Value = ((IntValueTerm)left).Value - ((IntValueTerm)right).Value };
+                    }
                 case OperatorMultiply:
-                    return new IntValueTerm { Value = leftVal * rightVal };
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new IntValueTerm { Value = ((IntValueTerm)left).Value * ((IntValueTerm)right).Value };
+                    }
                 case OperatorDivide:
-                    return new IntValueTerm { Value = leftVal / rightVal };
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new IntValueTerm { Value = ((IntValueTerm)left).Value / ((IntValueTerm)right).Value };
+                    }
+                case OperatorGt:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new BoolValueTerm { Value = ((IntValueTerm)left).Value > ((IntValueTerm)right).Value };
+                    }
+                case OperatorLt:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<IntValueTerm>(left);
+                        ExpectNode<IntValueTerm>(right);
+                        return new BoolValueTerm { Value = ((IntValueTerm)left).Value < ((IntValueTerm)right).Value };
+                    }
+                case OperatorAnd:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        ExpectNode<BoolValueTerm>(left);
+                        var valLeft = (BoolValueTerm)left;
+                        if (!valLeft.Value)
+                        {
+                            return new BoolValueTerm { Value = false };
+                        }
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<BoolValueTerm>(right);
+                        var valRight = (BoolValueTerm)right;
+                        return new BoolValueTerm { Value = valRight.Value };
+                    }
+                case OperatorOr:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        ExpectNode<BoolValueTerm>(left);
+                        var valLeft = (BoolValueTerm)left;
+                        if (valLeft.Value)
+                        {
+                            return new BoolValueTerm { Value = true };
+                        }
+                        var right = await Evaluate(binaryExpr.Right, env);
+                        ExpectNode<BoolValueTerm>(right);
+                        var valRight = (BoolValueTerm)right;
+                        return new BoolValueTerm { Value = valRight.Value };
+                    }
+                case OperatorEq:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        if (left is BoolValueTerm bLeft)
+                        {
+                            var right = await Evaluate(binaryExpr.Right, env);
+                            ExpectNode<BoolValueTerm>(right);
+                            return new BoolValueTerm { Value = bLeft.Value == ((BoolValueTerm)right).Value };
+                        }
+                        else if (left is IntValueTerm iLeft)
+                        {
+                            var right = await Evaluate(binaryExpr.Right, env);
+                            ExpectNode<IntValueTerm>(right);
+                            return new BoolValueTerm { Value = iLeft.Value == ((IntValueTerm)right).Value };
+                        }
+                        else
+                        {
+                            throw new IllformedProgramError();
+                        }
+                    }
+                case OperatorNe:
+                    {
+                        var left = await Evaluate(binaryExpr.Left, env);
+                        if (left is BoolValueTerm bLeft)
+                        {
+                            var right = await Evaluate(binaryExpr.Right, env);
+                            ExpectNode<BoolValueTerm>(right);
+                            return new BoolValueTerm { Value = bLeft.Value != ((BoolValueTerm)right).Value };
+                        }
+                        else if (left is IntValueTerm iLeft)
+                        {
+                            var right = await Evaluate(binaryExpr.Right, env);
+                            ExpectNode<IntValueTerm>(right);
+                            return new BoolValueTerm { Value = iLeft.Value != ((IntValueTerm)right).Value };
+                        }
+                        else
+                        {
+                            throw new IllformedProgramError();
+                        }
+                    }
                 default:
                     throw new NotImplementedException();
             }
@@ -185,6 +285,6 @@ public sealed class Machine
     }
     private static void ExpectTrue(bool expr)
     {
-        if (!expr) throw new ParseError();
+        if (!expr) throw new IllformedProgramError();
     }
 }
