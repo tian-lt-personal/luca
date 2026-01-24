@@ -115,6 +115,7 @@ public sealed class Machine
                 Body = func.Def,
                 Env = env
             },
+            ConditionExpr ifExpr => await Evaluate(ifExpr, env),
             _ => throw new NotImplementedException()
         };
     }
@@ -160,6 +161,19 @@ public sealed class Machine
             return new IntValueTerm { Value = -((IntValueTerm)term).Value };
         }
         throw new ArgumentException();
+    }
+    private async LazyTask<IExpr> Evaluate(ConditionExpr ifExpr, Env env)
+    {
+        var cond = await Evaluate(ifExpr.Condition, env);
+        ExpectNode<BoolValueTerm>(cond);
+        if (((BoolValueTerm)cond).Value)
+        {
+            return await Evaluate(ifExpr.PositiveBranch, env);
+        }
+        else
+        {
+            return await Evaluate(ifExpr.NegativeBranch, env);
+        }
     }
 
     private static void ExpectNode<T>(IExpr expr)

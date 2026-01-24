@@ -14,6 +14,10 @@ public class IntegerLiteral : LiteralToken
         Value = int.Parse(value);
     }
 }
+public class BooleanLiteral : LiteralToken
+{
+    public bool Value { get; init; }
+}
 
 public class IdentifierToken : IToken
 {
@@ -41,6 +45,8 @@ public class OperatorDivide : IToken { }
 public class OperatorRem : IToken { }
 public class OperatorEq : IToken { }
 public class OperatorNe : IToken { }
+public class OperatorGt : IToken { }
+public class OperatorLt : IToken { }
 public class OperatorLeftParen : IToken { }
 public class OperatorRightParen : IToken { }
 public class OperatorSemicolon : IToken { }

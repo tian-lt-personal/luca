@@ -23,22 +23,22 @@ public sealed class OneTimeParser
         {
             if (_tok is KeywordLet)
             {
-                MoveNext();
+                ConsumeToken();
                 ExpectToken<IdentifierToken>(_tok);
                 var id = (IdentifierToken)_tok;
-                MoveNext();
+                ConsumeToken();
                 ExpectToken<OperatorEq>(_tok);
-                MoveNext();
+                ConsumeToken();
                 var expr = ParseExpr();
                 ExpectToken<OperatorSemicolon>(_tok);
-                MoveNext();
+                ConsumeToken();
                 yield return new NamedStmt { Id = id, Value = expr };
             }
             else
             {
                 var expr = ParseExpr();
                 ExpectToken<OperatorSemicolon>(_tok);
-                MoveNext();
+                ConsumeToken();
                 yield return new ExprStmt { Expr = expr };
             }
         }
@@ -54,7 +54,16 @@ public sealed class OneTimeParser
         }
         else
         {
-            var term = ParseTerm();
+            IExpr term;
+            if (_tok is KeywordIf)
+            {
+                term = ParseConditionExpr();
+            }
+            else
+            {
+                term = ParseTerm();
+            }
+
             if (IsBinaryArithmeticOperator(_tok))
             {
                 left = ParseArithmeticExpr(term, 0);
@@ -65,13 +74,12 @@ public sealed class OneTimeParser
             }
         }
 
-        do
+        while (_tok is not
+                OperatorRightParen or
+                OperatorSemicolon or
+                KeywordElse or
+                KeywordThen)
         {
-            if (_tok is OperatorRightParen or OperatorSemicolon)
-            {
-                return left;
-            }
-
             IExpr? right;
             if (IsUnaryArithmeticOperator(_tok))
             {
@@ -96,17 +104,39 @@ public sealed class OneTimeParser
 
             left = new EvalExpr { Function = left, Argument = right };
         }
-        while (true);
+        return left;
     }
 
-    private IExpr ParseArithmeticExpr(Term? beginning, int minPrecedence)
+    private ConditionExpr ParseConditionExpr()
+    {
+        ExpectToken<KeywordIf>(_tok);
+        ConsumeToken();
+
+        var condExpr = ParseExpr();
+        ExpectToken<KeywordThen>(_tok);
+        ConsumeToken();
+
+        var trueExpr = ParseExpr();
+        ExpectToken<KeywordElse>(_tok);
+        ConsumeToken();
+
+        var falseExpr = ParseExpr();
+        return new ConditionExpr
+        {
+            Condition = condExpr,
+            PositiveBranch = trueExpr,
+            NegativeBranch = falseExpr
+        };
+    }
+
+    private IExpr ParseArithmeticExpr(IExpr? beginning, int minPrecedence)
     {
         IExpr left;
         if (beginning == null)
         {
             if (_tok is OperatorMinus op)
             { // unary minus
-                MoveNext();
+                ConsumeToken();
                 var term = ParseTerm();
                 left = new UnaryOpExpr { Operator = op, Term = term! };
             }
@@ -123,7 +153,7 @@ public sealed class OneTimeParser
         while (IsBinaryArithmeticOperator(_tok) && GetPrecedence(_tok) > minPrecedence)
         {
             var op = _tok;
-            MoveNext();
+            ConsumeToken();
             var right = ParseArithmeticExpr(null, GetPrecedence(op));
             left = new BinaryOpExpr { Operator = op, Left = left, Right = right };
         }
@@ -146,20 +176,25 @@ public sealed class OneTimeParser
             {
                 return ParseFunc();
             }
-            MoveNext();
+            ConsumeToken();
             return new IdTerm { Id = id };
         }
         else if (_tok is IntegerLiteral intVal)
         {
-            MoveNext();
+            ConsumeToken();
             return new IntValueTerm { Value = intVal.Value };
+        }
+        else if (_tok is BooleanLiteral b)
+        {
+            ConsumeToken();
+            return new BoolValueTerm { Value = b.Value };
         }
         else if (_tok is OperatorLeftParen)
         {
-            MoveNext();
+            ConsumeToken();
             var expr = ParseExpr();
             ExpectToken<OperatorRightParen>(_tok);
-            MoveNext();
+            ConsumeToken();
             return new ParenTerm { InnerExpr = expr };
         }
         return null;
@@ -170,16 +205,16 @@ public sealed class OneTimeParser
         // expect identifier
         ExpectToken<IdentifierToken>(_tok);
         var param = (IdentifierToken)_tok;
-        MoveNext();
+        ConsumeToken();
 
         // expect dot
         ExpectToken<OperatorDot>(_tok);
-        MoveNext();
+        ConsumeToken();
         var body = ParseExpr();
         return new FunctionTerm { Var = param, Def = body };
     }
 
-    private IToken MoveNext()
+    private IToken ConsumeToken()
     {
         _tok = _tokNext!;
         _tokNext = _lex.TryGetToken();

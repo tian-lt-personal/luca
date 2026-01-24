@@ -13,6 +13,10 @@ public class IntValueTerm : ValueTerm
 {
     public required int Value { get; init; }
 }
+public class BoolValueTerm : ValueTerm
+{
+    public required bool Value { get; init; }
+}
 public class ParenTerm : Term
 {
     public required IExpr InnerExpr { get; init; }
@@ -27,6 +31,12 @@ public class EvalExpr : IExpr
 {
     public required IExpr Function { get; init; }
     public required IExpr Argument { get; init; }
+}
+public class ConditionExpr : IExpr
+{
+    public required IExpr Condition { get; init; }
+    public required IExpr PositiveBranch { get; init; }
+    public required IExpr NegativeBranch { get; init; }
 }
 
 public abstract class ArithmeticExpr : IExpr { }
