@@ -33,7 +33,5 @@ jobs:
       with:
         files: |
           ./artifacts/*.nupkg
-          ./artifacts/*.snupkg
-          ./artifacts/*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
