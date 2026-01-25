@@ -50,7 +50,7 @@ internal sealed class Lexer
         @"(?<Keyword>\b(let|if|then|else|true|false|curexpr)\b)|" +
         @"(?<Identifier>[A-z_a-z][\w_]*)|" +
         @"(?<IntegerLiteral>\b\d+\b)|" +
-        @"(?<Operator>->|!=|&&|\|\||[.\+\-\*/=<>%\(\);])|" +
+        @"(?<Operator>->|!=|&&|\|\||[{}.\+\-\*/=<>%\(\);])|" +
         @"(?<Ws>\s+)";
     private readonly string _source;
     private readonly Regex _dfa;
@@ -184,6 +184,10 @@ internal sealed class Lexer
                 return new OperatorGt();
             case "<":
                 return new OperatorLt();
+            case "{":
+                return new OperatorLeftBrace();
+            case "}":
+                return new OperatorRightBrace();
             default:
                 throw new BadOperatorError(index, name);
         }

@@ -72,6 +72,8 @@ public class LexerTests
     [InlineData("||", nameof(OperatorOr))]
     [InlineData(">", nameof(OperatorGt))]
     [InlineData("<", nameof(OperatorLt))]
+    [InlineData("{", nameof(OperatorLeftBrace))]
+    [InlineData("}", nameof(OperatorRightBrace))]
     public void Operators(string source, string expectedType)
     {
         var token = new Lexer(source).GetToken();

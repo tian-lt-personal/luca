@@ -62,23 +62,41 @@ internal sealed class Closure : Term
 
 public sealed class Machine
 {
-    private readonly Env _topEnv = new Env();
+    private readonly Stack<Env> _envs = new();
+
+    public Machine()
+    {
+        _envs.Push(new Env());
+    }
 
     public IEnumerable<IExpr> Digest(string source)
     {
         var parser = new OneTimeParser(source);
         foreach (var stmt in parser.ParseProgram())
         {
-            if (stmt is NamedStmt nstmt)
+            if (stmt is LetStmt lstmt)
             {
-                var res = Trampoline.Run(Evaluate(nstmt.Value, _topEnv));
-                _topEnv.Define(nstmt.Id.Name, res);
+                var res = Trampoline.Run(Evaluate(lstmt.Value, _envs.Peek()));
+                _envs.Peek().Define(lstmt.Id.Name, res);
                 yield return res;
             }
             else if (stmt is ExprStmt estmt)
             {
-                var res = Trampoline.Run(Evaluate(estmt.Expr, _topEnv));
+                var res = Trampoline.Run(Evaluate(estmt.Expr, _envs.Peek()));
                 yield return res;
+            }
+            else if (stmt is ScopeBeginStmt)
+            {
+                _envs.Push(new Env(_envs.Peek()));
+            }
+            else if (stmt is ScopeEndStmt)
+            {
+                ExpectTrue(_envs.Count > 0);
+                _envs.Pop();
+            }
+            else
+            {
+                throw new NotImplementedException();
             }
         }
     }

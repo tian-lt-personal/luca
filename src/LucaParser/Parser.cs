@@ -9,6 +9,7 @@ public sealed class OneTimeParser
     private readonly Lexer _lex;
     private IToken _tok;
     private IToken? _tokNext;
+    private int _scopeLevel = 0;
 
     public OneTimeParser(string source)
     {
@@ -32,8 +33,22 @@ public sealed class OneTimeParser
                 var expr = ParseExpr();
                 ExpectToken<OperatorSemicolon>(_tok);
                 ConsumeToken();
-                yield return new NamedStmt { Id = id, Value = expr };
+                yield return new LetStmt { Id = id, Value = expr };
             }
+            else if (_tok is OperatorLeftBrace)
+            {
+                ConsumeToken();
+                ++_scopeLevel;
+                yield return new ScopeBeginStmt();
+            }
+            else if (_tok is OperatorRightBrace)
+            {
+                ConsumeToken();
+                ExpectTrue(_scopeLevel > 0);
+                --_scopeLevel;
+                yield return new ScopeEndStmt();
+            }
+            else if (_tok is OperatorSemicolon) { ConsumeToken(); }
             else
             {
                 var expr = ParseExpr();
@@ -42,7 +57,6 @@ public sealed class OneTimeParser
                 yield return new ExprStmt { Expr = expr };
             }
         }
-        yield break;
     }
 
     private IExpr ParseExpr()

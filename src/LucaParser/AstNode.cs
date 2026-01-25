@@ -54,17 +54,15 @@ public class BinaryOpExpr : ArithmeticExpr
 
 public interface IStmt { }
 
-public class NamedStmt : IStmt
+public class LetStmt : IStmt
 {
     public required IdentifierToken Id { get; init; }
     public required IExpr Value { get; init; }
 }
-
 public class ExprStmt : IStmt
 {
     public required IExpr Expr { get; init; }
 }
-
-public class TypeStmt : IStmt
-{
-}
+public class ScopeBeginStmt : IStmt { }
+public class ScopeEndStmt : IStmt { }
+public class TypeStmt : IStmt { }

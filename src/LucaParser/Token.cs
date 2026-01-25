@@ -1,8 +1,6 @@
 namespace Luca.Parser;
 
-public interface IToken
-{
-}
+public interface IToken { }
 
 public abstract class LiteralToken : IToken { }
 public class IntegerLiteral : LiteralToken
@@ -29,26 +27,28 @@ public class IdentifierToken : IToken
 }
 
 public abstract class KeywordToken : IToken { }
-public class KeywordLet : IToken { }
-public class KeywordIf : IToken { }
-public class KeywordThen : IToken { }
-public class KeywordElse : IToken { }
-public class KeywordCurexpr : IToken { }
+public class KeywordLet : KeywordToken { }
+public class KeywordIf : KeywordToken { }
+public class KeywordThen : KeywordToken { }
+public class KeywordElse : KeywordToken { }
+public class KeywordCurexpr : KeywordToken { }
 
 public abstract class OperatorToken : IToken { }
-public class OperatorPropOf : IToken { }
-public class OperatorDot : IToken { }
-public class OperatorPlus : IToken { }
-public class OperatorMinus : IToken { }
-public class OperatorMultiply : IToken { }
-public class OperatorDivide : IToken { }
-public class OperatorRem : IToken { }
-public class OperatorEq : IToken { }
-public class OperatorNe : IToken { }
-public class OperatorGt : IToken { }
-public class OperatorLt : IToken { }
-public class OperatorAnd : IToken { }
-public class OperatorOr : IToken { }
-public class OperatorLeftParen : IToken { }
-public class OperatorRightParen : IToken { }
-public class OperatorSemicolon : IToken { }
+public class OperatorPropOf : OperatorToken { }
+public class OperatorDot : OperatorToken { }
+public class OperatorPlus : OperatorToken { }
+public class OperatorMinus : OperatorToken { }
+public class OperatorMultiply : OperatorToken { }
+public class OperatorDivide : OperatorToken { }
+public class OperatorRem : OperatorToken { }
+public class OperatorEq : OperatorToken { }
+public class OperatorNe : OperatorToken { }
+public class OperatorGt : OperatorToken { }
+public class OperatorLt : OperatorToken { }
+public class OperatorAnd : OperatorToken { }
+public class OperatorOr : OperatorToken { }
+public class OperatorLeftParen : OperatorToken { }
+public class OperatorRightParen : OperatorToken { }
+public class OperatorSemicolon : OperatorToken { }
+public class OperatorLeftBrace : OperatorToken { }
+public class OperatorRightBrace : OperatorToken { }
