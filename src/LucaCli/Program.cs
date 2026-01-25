@@ -1,3 +1,5 @@
+using System.CommandLine;
+using System.Reflection;
 using Luca.Parser;
 
 namespace Luca.Cli;
@@ -6,7 +8,16 @@ public static class Program
 {
     public static void Main(string[] args)
     {
+        var rootCmd = new RootCommand("LUCA CLI");
+        rootCmd.SetAction(parseResult => RealtimeCli());
+        rootCmd.Parse(args).Invoke();
+    }
+
+    private static void RealtimeCli()
+    {
         var vm = new Machine();
+        var ver = Assembly.GetEntryAssembly()!.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
+        Console.WriteLine($"LUCA CLI ({ver})\nEnter commands ending with ';;' to execute.\n");
         Console.Write("> ");
         string source = string.Empty;
         while (true)
