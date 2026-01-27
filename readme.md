@@ -1,3 +1,7 @@
+*Experimental project - work in progress*
+
+---
+
 # Luca: A Functional Language for Self-Evolving Programs 
 Luca (named after *Last Universal Common Ancestor*) is a functional programming language engineered specifically for **Genetic Programming (GP)** and the development of autonomous,
 **self-evolving** systems.
