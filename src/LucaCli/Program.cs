@@ -19,13 +19,20 @@ public static class Program
         rootCmd.SetAction(parseResult =>
         {
             var file = parseResult.GetValue(fileArg);
-            if (file != null)
+            try
             {
-                ExecuteFile(file);
+                if (file != null)
+                {
+                    ExecuteFile(file);
+                }
+                else
+                {
+                    RealtimeCli();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                RealtimeCli();
+                Console.WriteLine($"Runtime Error: {ex.Message}");
             }
         });
         rootCmd.Parse(args).Invoke();
