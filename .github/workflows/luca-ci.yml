@@ -1,4 +1,4 @@
-name: .NET
+name: Luca-CI
 
 on:
   push:
