@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="LucaCli/LucaCli.csproj" />
+  <Project Path="LucaParser/LucaParser.csproj" />
+  <Project Path="LucaUnitTests/LucaUnitTests.csproj" />
+  <Project Path="LucaVM/LucaVM.csproj" />
+</Solution>
