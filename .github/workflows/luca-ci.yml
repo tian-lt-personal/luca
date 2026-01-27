@@ -28,6 +28,7 @@ jobs:
     - name: Test
       run: dotnet test ./src --no-build --verbosity normal
     - name: Publish
+      if: startsWith(github.ref, 'refs/tags/')
       run: |
         dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./artifacts/win-x64
         dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./artifacts/linux-x64

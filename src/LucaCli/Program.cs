@@ -8,9 +8,41 @@ public static class Program
 {
     public static void Main(string[] args)
     {
+        var fileArg = new Argument<FileInfo>(name: "file")
+        {
+            Arity = ArgumentArity.ZeroOrOne,
+            Description = "LUCA source file"
+        };
+        fileArg.AcceptExistingOnly();
         var rootCmd = new RootCommand("LUCA CLI");
-        rootCmd.SetAction(parseResult => RealtimeCli());
+        rootCmd.Arguments.Add(fileArg);
+        rootCmd.SetAction(parseResult =>
+        {
+            var file = parseResult.GetValue(fileArg);
+            if (file != null)
+            {
+                ExecuteFile(file);
+            }
+            else
+            {
+                RealtimeCli();
+            }
+        });
         rootCmd.Parse(args).Invoke();
+    }
+
+    private static void ExecuteFile(FileInfo file)
+    {
+        var vm = new Machine();
+        var source = File.ReadAllText(file.FullName);
+        try
+        {
+            foreach (var _ in vm.Digest(source)) { }
+        }
+        catch (Exception ex) when (ex is MachineRuntimeError or ParseError or LexerError)
+        {
+            Console.WriteLine($"VM Error: {ex.Message}");
+        }
     }
 
     private static void RealtimeCli()
