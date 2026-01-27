@@ -20,3 +20,19 @@ It bridges the gap between execution and evolution by allowing programs to treat
 Luca is designed to be the foundational layer for software that doesn't just run,
 but **learns and rewrites itself** in response to environmental feedback,
 pushing the boundaries of what is possible in evolutionary computation and self-organizing systems.
+
+
+## Samples
+
+```luca
+let a = 10;
+let b = a; // b is 10
+
+let add = x.y.x + y;
+add 5 7; // evaluates to 12
+
+let add5 = add 5;
+add5 20; // evaluates to 25
+
+if a > 5 then 1 else 2; // evaluates to 1
+```
