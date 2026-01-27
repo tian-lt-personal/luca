@@ -35,6 +35,8 @@ jobs:
         zip -r ./artifacts/luca-win-x64.zip ./artifacts/win-x64
         tar -czvf ./artifacts/luca-linux-x64.tar.gz -C ./artifacts/linux-x64 .
         tar -czvf ./artifacts/luca-linux-arm64.tar.gz -C ./artifacts/linux-arm64 .
+      env:
+        MinVerTagPrefix: v
     - name: Create Release and Upload Assets
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
