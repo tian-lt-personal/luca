@@ -29,9 +29,9 @@ jobs:
       run: dotnet test ./src --no-build --verbosity normal
     - name: Publish
       run: |
-        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r win-x64 --self-contained false -o ./artifacts/win-x64
-        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r linux-x64 --self-contained false -o ./artifacts/linux-x64
-        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r linux-arm64 --self-contained false -o ./artifacts/linux-arm64
+        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./artifacts/win-x64
+        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./artifacts/linux-x64
+        dotnet publish ./src/LucaCli/LucaCli.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=true -o ./artifacts/linux-arm64
         zip -r ./artifacts/luca-win-x64.zip ./artifacts/win-x64
         tar -czvf ./artifacts/luca-linux-x64.tar.gz -C ./artifacts/linux-x64 .
         tar -czvf ./artifacts/luca-linux-arm64.tar.gz -C ./artifacts/linux-arm64 .
