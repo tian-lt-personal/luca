@@ -55,7 +55,7 @@ internal sealed class Env
 
 internal sealed class Closure : Term
 {
-    public required string VarName { get; init; }
+    public required string Var { get; init; }
     public required IExpr Body { get; init; }
     public required Env Env { get; init; }
 }
@@ -77,7 +77,7 @@ public sealed class Machine
             if (stmt is LetStmt lstmt)
             {
                 var res = Trampoline.Run(Evaluate(lstmt.Value, _envs.Peek()));
-                _envs.Peek().Define(lstmt.Id.Name, res);
+                _envs.Peek().Define(lstmt.Id, res);
                 yield return res;
             }
             else if (stmt is ExprStmt estmt)
@@ -106,7 +106,7 @@ public sealed class Machine
         if (expr is Closure f)
         {
             var res = "#closure \n";
-            res += $".varname = {f.VarName}\n";
+            res += $".var = {f.Var}\n";
             res += $".body = {Dump(f.Body)}\n";
             res += $".env = {f.Env.GetHashCode()}\n";
             res += "closure#";
@@ -126,10 +126,10 @@ public sealed class Machine
             ArithmeticExpr mathExpr => await Evaluate(mathExpr, env),
             ValueTerm val => val,
             ParenTerm paren => await Evaluate(paren.InnerExpr, env),
-            IdTerm id => env.Lookup(id.Id.Name),
+            IdTerm id => env.Lookup(id.Id),
             FunctionTerm func => new Closure
             {
-                VarName = func.Var.Name,
+                Var = func.Var,
                 Body = func.Def,
                 Env = env
             },
@@ -142,7 +142,7 @@ public sealed class Machine
         ExpectNode<Closure>(functor);
         var f = (Closure)functor;
         var env = new Env(f.Env);
-        env.Define(f.VarName, argument);
+        env.Define(f.Var, argument);
         return await Evaluate(f.Body, env);
     }
     private async LazyTask<IExpr> Evaluate(ArithmeticExpr mathExpr, Env env)

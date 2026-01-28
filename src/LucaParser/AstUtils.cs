@@ -10,7 +10,7 @@ public static class AstUtils
 
         if (node is IdTerm id)
         {
-            builder.Append($"[id: {id.Id.Name}]");
+            builder.Append($"[id: {id.Id}]");
         }
         else if (node is ValueTerm val)
         {
@@ -34,7 +34,7 @@ public static class AstUtils
         {
             builder.Append($"[func:\n");
             AppendMargin(builder, level + 1);
-            builder.Append($".var = {func.Var.Name}\n");
+            builder.Append($".var = {func.Var}\n");
             AppendMargin(builder, level + 1);
             builder.Append($".def = {Dump(func.Def, level + 1)}\n");
             AppendMargin(builder, level);

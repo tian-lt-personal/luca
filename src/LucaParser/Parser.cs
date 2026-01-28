@@ -33,7 +33,7 @@ public sealed class OneTimeParser
                 var expr = ParseExpr();
                 ExpectToken<OperatorSemicolon>(_tok);
                 ConsumeToken();
-                yield return new LetStmt { Id = id, Value = expr };
+                yield return new LetStmt { Id = id.Name, Value = expr };
             }
             else if (_tok is OperatorLeftBrace)
             {
@@ -191,7 +191,7 @@ public sealed class OneTimeParser
                 return ParseFunc();
             }
             ConsumeToken();
-            return new IdTerm { Id = id };
+            return new IdTerm { Id = id.Name };
         }
         else if (_tok is IntegerLiteral intVal)
         {
@@ -225,7 +225,7 @@ public sealed class OneTimeParser
         ExpectToken<OperatorDot>(_tok);
         ConsumeToken();
         var body = ParseExpr();
-        return new FunctionTerm { Var = param, Def = body };
+        return new FunctionTerm { Var = param.Name, Def = body };
     }
 
     private IToken ConsumeToken()
