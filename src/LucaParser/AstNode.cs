@@ -6,7 +6,7 @@ public abstract class Term : IExpr { }
 
 public class IdTerm : Term
 {
-    public required IdentifierToken Id { get; init; }
+    public required string Id { get; init; }
 }
 public abstract class ValueTerm : Term { }
 public class IntValueTerm : ValueTerm
@@ -23,7 +23,7 @@ public class ParenTerm : Term
 }
 public class FunctionTerm : Term
 {
-    public required IdentifierToken Var { get; init; }
+    public required string Var { get; init; }
     public required IExpr Def { get; init; }
 }
 
@@ -56,7 +56,7 @@ public interface IStmt { }
 
 public class LetStmt : IStmt
 {
-    public required IdentifierToken Id { get; init; }
+    public required string Id { get; init; }
     public required IExpr Value { get; init; }
 }
 public class ExprStmt : IStmt

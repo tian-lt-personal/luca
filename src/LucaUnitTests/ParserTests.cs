@@ -27,7 +27,8 @@ public class ParserTests
 
     [Theory]
     [InlineData("x")]
-    //[InlineData("let;")]
+    [InlineData("let;")]
+    [InlineData("let=;")]
     [InlineData("(;")]
     [InlineData(");")]
     [InlineData("(x;")]
@@ -62,6 +63,16 @@ public class ParserTests
     [InlineData("x*y-z;")]
     [InlineData("(x+y*z)-(u+v);")]
     public void ArithmeticExpr(string source)
+    {
+        var parser = new OneTimeParser(source);
+        var prog = parser.ParseProgram().ToArray();
+    }
+
+    [Theory]
+    [InlineData("if x then y else z;")]
+    [InlineData("if x then if a then b else c else if u then v else w;")]
+    [InlineData("if (x) then (if (a) then b else c) else (if (u) then v else w);")]
+    public void IfExpr(string source)
     {
         var parser = new OneTimeParser(source);
         var prog = parser.ParseProgram().ToArray();
