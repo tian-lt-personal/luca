@@ -22,7 +22,7 @@ std::expected<token, lex_err> lexer::next() {
     $ { return std::unexpected{lex_err_eof{}}; }
 
     id         { return tk::id{.name = lexeme()}; }
-    number     { return tk::literal_int{.value = lexeme()}; }
+    number     { return tk::li_int{.value = lexeme()}; }
     glued_err  { return std::unexpected{lex_err_unknown{}}; }
     ws         { continue; }
   */

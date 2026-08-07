@@ -75,20 +75,20 @@ INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
 INSTANTIATE_TEST_SUITE_P(literal_int_tokens, lexer_theory,
                          ::testing::Values(
                              // single digits
-                             test_case{.source = "0", .expected = tk::literal_int{.value = "0"}},
-                             test_case{.source = "1", .expected = tk::literal_int{.value = "1"}},
-                             test_case{.source = "9", .expected = tk::literal_int{.value = "9"}},
+                             test_case{.source = "0", .expected = tk::li_int{.value = "0"}},
+                             test_case{.source = "1", .expected = tk::li_int{.value = "1"}},
+                             test_case{.source = "9", .expected = tk::li_int{.value = "9"}},
                              // standard multi-digit numbers
-                             test_case{.source = "42", .expected = tk::literal_int{.value = "42"}},
-                             test_case{.source = "1024", .expected = tk::literal_int{.value = "1024"}},
+                             test_case{.source = "42", .expected = tk::li_int{.value = "42"}},
+                             test_case{.source = "1024", .expected = tk::li_int{.value = "1024"}},
                              // numbers with leading zeros
-                             test_case{.source = "00", .expected = tk::literal_int{.value = "00"}},
-                             test_case{.source = "007", .expected = tk::literal_int{.value = "007"}},
-                             test_case{.source = "012345", .expected = tk::literal_int{.value = "012345"}},
+                             test_case{.source = "00", .expected = tk::li_int{.value = "00"}},
+                             test_case{.source = "007", .expected = tk::li_int{.value = "007"}},
+                             test_case{.source = "012345", .expected = tk::li_int{.value = "012345"}},
                              // long numeric sequences
-                             test_case{.source = "9876543210", .expected = tk::literal_int{.value = "9876543210"}},
+                             test_case{.source = "9876543210", .expected = tk::li_int{.value = "9876543210"}},
                              test_case{.source = "18446744073709551615",
-                                       .expected = tk::literal_int{.value = "18446744073709551615"}},
+                                       .expected = tk::li_int{.value = "18446744073709551615"}},
                              // unsupported numeric bases (e.g., hex, binary)
                              // these will trigger glued_err because "0" is matched as number,
                              // and "x" or "b" triggers the error capture.
