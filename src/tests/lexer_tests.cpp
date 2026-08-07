@@ -36,7 +36,6 @@ TEST_P(lexer_theory, next) {
 
 INSTANTIATE_TEST_SUITE_P(empty_source, lexer_theory,
                          ::testing::Values(test_case{.source = "", .expected = std::unexpected{lex_err_eof{}}}));
-
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
@@ -61,11 +60,6 @@ INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                              // valid: mixed hyphens and underscores
                              test_case{.source = "a1-b2_c3", .expected = tk::id{.name = "a1-b2_c3"}},
                              test_case{.source = "_foo-bar_", .expected = tk::id{.name = "_foo-bar_"}},
-                             // invalid: starts with hyphen
-                             test_case{.source = "-", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "-abc", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "-123", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "-_", .expected = std::unexpected{lex_err_unknown{}}},
                              // invalid: glued errors (starts with digit, followed by id chars)
                              test_case{.source = "123abc", .expected = std::unexpected{lex_err_unknown{}}},
                              test_case{.source = "123-abc", .expected = std::unexpected{lex_err_unknown{}}},
@@ -110,5 +104,54 @@ INSTANTIATE_TEST_SUITE_P(literal_int_tokens, lexer_theory,
                              test_case{.source = "456-", .expected = std::unexpected{lex_err_unknown{}}},
                              test_case{.source = "1-2", .expected = std::unexpected{lex_err_unknown{}}},
                              test_case{.source = "0-", .expected = std::unexpected{lex_err_unknown{}}}));
+INSTANTIATE_TEST_SUITE_P(
+    literal_string_tokens, lexer_theory,
+    ::testing::Values(
+        // valid: empty string
+        test_case{.source = "\"\"", .expected = tk::li_str{.raw = ""}},
+        // valid: standard alphanumeric and symbols
+        test_case{.source = "\"hello\"", .expected = tk::li_str{.raw = "hello"}},
+        test_case{.source = "\"hello world\"", .expected = tk::li_str{.raw = "hello world"}},
+        test_case{.source = "\"123-abc_!@#\"", .expected = tk::li_str{.raw = "123-abc_!@#"}},
+        test_case{.source = "\"  padding  \"", .expected = tk::li_str{.raw = "  padding  "}},
+        test_case{.source = "  \"outer padding\"   ", .expected = tk::li_str{.raw = "outer padding"}},
+        // valid: escaped sequences
+        // lexer captures the exact raw characters, so "\\n" in source becomes "\\n" in the view.
+        test_case{.source = "\"newline \\n test\"", .expected = tk::li_str{.raw = "newline \\n test"}},
+        test_case{.source = "\"tab \\t test\"", .expected = tk::li_str{.raw = "tab \\t test"}},
+        test_case{.source = "\"escaped \\\" quotes\"", .expected = tk::li_str{.raw = "escaped \\\" quotes"}},
+        test_case{.source = "\"escaped \\\\ slash\"", .expected = tk::li_str{.raw = "escaped \\\\ slash"}},
+        // invalid: unclosed strings ending at EOF
+        test_case{.source = "\"", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"unclosed EOF", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"unclosed with \\\" quote", .expected = std::unexpected{lex_err_unknown{}}},
+        // invalid: unclosed strings hitting a newline
+        // the rule forbids raw newlines inside the quotes.
+        test_case{.source = "\"unclosed\n\"", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"line1\nline2\"", .expected = std::unexpected{lex_err_unknown{}}},
+        // invalid: trailing escape character at EOF or Newline
+        // prevents matching an escape sequence that eats the null-terminator.
+        test_case{.source = "\"trailing escape \\", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"trailing escape \\\n", .expected = std::unexpected{lex_err_unknown{}}}));
+INSTANTIATE_TEST_SUITE_P(operator_tokens, lexer_theory,
+                         ::testing::Values(test_case{.source = "+", .expected = tk::op_plus{}},
+                                           test_case{.source = "-", .expected = tk::op_minus{}},
+                                           test_case{.source = "*", .expected = tk::op_mul{}},
+                                           test_case{.source = "/", .expected = tk::op_div{}},
+                                           test_case{.source = "=", .expected = tk::op_eq{}}));
+TEST(lexer_tests, multiple_tokens) {
+  std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
+  lexer l{source};
+  lexer::lex_result expected_seq[] = {
+      tk::id{.name = "foo_bar"},  tk::op_eq{},    tk::li_int{.value = "123"}, tk::op_plus{},
+      tk::li_str{.raw = "hello"}, tk::op_minus{}, tk::li_int{.value = "42"},  std::unexpected{lex_err_eof{}},
+  };
+  for (size_t i = 0; i < std::size(expected_seq); ++i) {
+    auto actual = l.next();
+    EXPECT_EQ(actual, expected_seq[i]) << "mismatch at " << i;
+  }
+  auto actual = l.next();
+  EXPECT_EQ(actual, lexer::lex_result{std::unexpected{lex_err_eof{}}});
+}
 
 }  // namespace tests

@@ -19,9 +19,10 @@ using lex_err = std::variant<lex_err_eof, lex_err_unknown>;
 
 class lexer {
  public:
+  using lex_result = std::expected<token, lex_err>;
   explicit lexer(const std::string& source) : src_(source.data()), cur_(src_), lim_(src_ + source.size()) {}
   explicit lexer(std::string&&) = delete;
-  std::expected<token, lex_err> next();
+  lex_result next();
 
  private:
   std::string_view lexeme() const { return std::string_view{tok_, static_cast<size_t>(cur_ - tok_)}; }
