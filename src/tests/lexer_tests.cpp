@@ -36,6 +36,9 @@ TEST_P(lexer_theory, next) {
 
 INSTANTIATE_TEST_SUITE_P(empty_source, lexer_theory,
                          ::testing::Values(test_case{.source = "", .expected = std::unexpected{lex_err_eof{}}}));
+INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
+                         ::testing::Values(test_case{.source = "\\", .expected = tk::kw_lambda{}},
+                                           test_case{.source = "lambda", .expected = tk::kw_lambda{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
@@ -138,7 +141,12 @@ INSTANTIATE_TEST_SUITE_P(operator_tokens, lexer_theory,
                                            test_case{.source = "-", .expected = tk::op_minus{}},
                                            test_case{.source = "*", .expected = tk::op_mul{}},
                                            test_case{.source = "/", .expected = tk::op_div{}},
-                                           test_case{.source = "=", .expected = tk::op_eq{}}));
+                                           test_case{.source = "=", .expected = tk::op_eq{}},
+                                           test_case{.source = ":", .expected = tk::op_colon{}},
+                                           test_case{.source = ".", .expected = tk::op_dot{}},
+                                           test_case{.source = ",", .expected = tk::op_comma{}},
+                                           test_case{.source = "(", .expected = tk::lparen{}},
+                                           test_case{.source = ")", .expected = tk::rparen{}}));
 TEST(lexer_tests, multiple_tokens) {
   std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
   lexer l{source};

@@ -10,6 +10,9 @@ struct id {
   std::string_view name;
   friend std::strong_ordering operator<=>(id, id) = default;
 };
+struct kw_lambda {
+  friend std::strong_ordering operator<=>(kw_lambda, kw_lambda) = default;
+};
 struct li_int {
   std::string_view value;
   friend std::strong_ordering operator<=>(li_int, li_int) = default;
@@ -33,8 +36,23 @@ struct op_div {
 struct op_eq {
   friend std::strong_ordering operator<=>(op_eq, op_eq) = default;
 };  // =
+struct op_comma {
+  friend std::strong_ordering operator<=>(op_comma, op_comma) = default;
+};
+struct op_colon {
+  friend std::strong_ordering operator<=>(op_colon, op_colon) = default;
+};
+struct op_dot {
+  friend std::strong_ordering operator<=>(op_dot, op_dot) = default;
+};
+struct lparen {
+  friend std::strong_ordering operator<=>(lparen, lparen) = default;
+};
+struct rparen {
+  friend std::strong_ordering operator<=>(rparen, rparen) = default;
+};
 
 }  // namespace tk
 
-using token =
-    std::variant<tk::id, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus, tk::op_mul, tk::op_div, tk::op_eq>;
+using token = std::variant<tk::id, tk::kw_lambda, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus, tk::op_mul,
+                           tk::op_div, tk::op_eq, tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;

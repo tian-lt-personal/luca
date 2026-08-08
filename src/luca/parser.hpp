@@ -58,7 +58,7 @@ struct context {
 }  // namespace ast
 
 struct parse_err_unknown {};
-using parse_err = std::variant<parse_err_unknown>;
+using parse_err = std::variant<parse_err_unknown, lex_err>;
 
 using parse_result = std::expected<std::pair<ast::term, ast::context>, parse_err>;
-parse_result parse(const std::string& source) noexcept;
+parse_result parse(const std::string& source);

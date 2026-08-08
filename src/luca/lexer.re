@@ -26,11 +26,19 @@ std::expected<token, lex_err> lexer::next() noexcept {
     * { return std::unexpected{lex_err_unknown{}}; }
     $ { return std::unexpected{lex_err_eof{}}; }
 
+    "("        { return tk::lparen{}; }
+    ")"        { return tk::rparen{}; }
     "+"        { return tk::op_plus{}; }
     "-"        { return tk::op_minus{}; }
     "*"        { return tk::op_mul{}; }
     "/"        { return tk::op_div{}; }
     "="        { return tk::op_eq{}; }
+    ","        { return tk::op_comma{}; }
+    ":"        { return tk::op_colon{}; }
+    "."        { return tk::op_dot{}; }
+
+    "\\"        { return tk::kw_lambda{}; }
+    "lambda"    { return tk::kw_lambda{}; }
 
     id         { return tk::id{.name = lexeme()}; }
     number     { return tk::li_int{.value = lexeme()}; }
