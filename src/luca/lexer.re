@@ -1,6 +1,6 @@
 #include "lexer.hpp"
 
-std::expected<token, lex_err> lexer::next() noexcept {
+lex_result lexer::next() noexcept {
   for(;;) {
     tok_ = cur_;
   /*!re2c
@@ -39,6 +39,14 @@ std::expected<token, lex_err> lexer::next() noexcept {
 
     "\\"        { return tk::kw_lambda{}; }
     "lambda"    { return tk::kw_lambda{}; }
+    "if"        { return tk::kw_if{}; }
+    "then"      { return tk::kw_then{}; }
+    "else"      { return tk::kw_else{}; }
+    "bool"      { return tk::kw_bool{}; }
+    "true"      { return tk::kw_true{}; }
+    "false"     { return tk::kw_false{}; }
+    "int"       { return tk::kw_int{}; }
+    "string"    { return tk::kw_string{}; }
 
     id         { return tk::id{.name = lexeme()}; }
     number     { return tk::li_int{.value = lexeme()}; }

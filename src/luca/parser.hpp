@@ -15,11 +15,12 @@ struct type;
 struct type_unit {};
 struct type_int {};
 struct type_bool {};
+struct type_string {};
 struct type_arrow {
   type* from;
   type* to;
 };
-struct type : std::variant<type_unit, type_int, type_bool, type_arrow> {};
+struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arrow> {};
 
 struct term;
 struct var {
@@ -49,10 +50,10 @@ struct ifexpr {
   term* then;
   term* els;
 };
-struct term : std::variant<var, abst, appl> {};
+struct term : std::variant<var, abst, appl, binop, ifexpr, li_int, li_bool> {};
 
 struct context {
-  std::unique_ptr<std::pmr::unsynchronized_pool_resource> arena;
+  std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
 };
 
 }  // namespace ast

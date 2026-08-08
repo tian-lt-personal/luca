@@ -38,7 +38,15 @@ INSTANTIATE_TEST_SUITE_P(empty_source, lexer_theory,
                          ::testing::Values(test_case{.source = "", .expected = std::unexpected{lex_err_eof{}}}));
 INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
                          ::testing::Values(test_case{.source = "\\", .expected = tk::kw_lambda{}},
-                                           test_case{.source = "lambda", .expected = tk::kw_lambda{}}));
+                                           test_case{.source = "lambda", .expected = tk::kw_lambda{}},
+                                           test_case{.source = "if", .expected = tk::kw_if{}},
+                                       test_case{.source = "then", .expected = tk::kw_then{}},
+                                       test_case{.source = "else", .expected = tk::kw_else{}},
+                                           test_case{.source = "bool", .expected = tk::kw_bool{}},
+                                           test_case{.source = "true", .expected = tk::kw_true{}},
+                                           test_case{.source = "false", .expected = tk::kw_false{}},
+                                           test_case{.source = "int", .expected = tk::kw_int{}},
+                                           test_case{.source = "string", .expected = tk::kw_string{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
