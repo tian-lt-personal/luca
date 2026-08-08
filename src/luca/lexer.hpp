@@ -17,15 +17,15 @@ struct lex_err_unknown {
 };
 using lex_err = std::variant<lex_err_eof, lex_err_unknown>;
 
+using lex_result = std::expected<token, lex_err>;
 class lexer {
  public:
-  using lex_result = std::expected<token, lex_err>;
-  explicit lexer(const std::string& source) : src_(source.data()), cur_(src_), lim_(src_ + source.size()) {}
+  explicit lexer(const std::string& source) noexcept : src_(source.data()), cur_(src_), lim_(src_ + source.size()) {}
   explicit lexer(std::string&&) = delete;
-  lex_result next();
+  lex_result next() noexcept;
 
  private:
-  std::string_view lexeme() const { return std::string_view{tok_, static_cast<size_t>(cur_ - tok_)}; }
+  std::string_view lexeme() const noexcept { return std::string_view{tok_, static_cast<size_t>(cur_ - tok_)}; }
 
   const char* src_;
   const char* cur_;

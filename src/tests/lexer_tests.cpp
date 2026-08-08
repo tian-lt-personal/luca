@@ -142,7 +142,7 @@ INSTANTIATE_TEST_SUITE_P(operator_tokens, lexer_theory,
 TEST(lexer_tests, multiple_tokens) {
   std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
   lexer l{source};
-  lexer::lex_result expected_seq[] = {
+  lex_result expected_seq[] = {
       tk::id{.name = "foo_bar"},  tk::op_eq{},    tk::li_int{.value = "123"}, tk::op_plus{},
       tk::li_str{.raw = "hello"}, tk::op_minus{}, tk::li_int{.value = "42"},  std::unexpected{lex_err_eof{}},
   };
@@ -151,7 +151,7 @@ TEST(lexer_tests, multiple_tokens) {
     EXPECT_EQ(actual, expected_seq[i]) << "mismatch at " << i;
   }
   auto actual = l.next();
-  EXPECT_EQ(actual, lexer::lex_result{std::unexpected{lex_err_eof{}}});
+  EXPECT_EQ(actual, lex_result{std::unexpected{lex_err_eof{}}});
 }
 
 }  // namespace tests

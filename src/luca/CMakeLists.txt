@@ -11,6 +11,9 @@ add_custom_command(
   VERBATIM
 )
 
-add_library(luca STATIC lexer.cpp)
+add_library(luca STATIC
+  lexer.cpp
+  parser.cpp
+)
 target_compile_features(luca PUBLIC cxx_std_23)
 target_include_directories(luca PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

@@ -1,6 +1,6 @@
 #include "lexer.hpp"
 
-std::expected<token, lex_err> lexer::next() {
+std::expected<token, lex_err> lexer::next() noexcept {
   for(;;) {
     tok_ = cur_;
   /*!re2c
@@ -31,7 +31,7 @@ std::expected<token, lex_err> lexer::next() {
     "*"        { return tk::op_mul{}; }
     "/"        { return tk::op_div{}; }
     "="        { return tk::op_eq{}; }
-    
+
     id         { return tk::id{.name = lexeme()}; }
     number     { return tk::li_int{.value = lexeme()}; }
     string     {

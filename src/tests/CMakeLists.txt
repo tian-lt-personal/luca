@@ -2,6 +2,7 @@ find_package(GTest CONFIG REQUIRED)
 
 add_executable(luca_tests
   lexer_tests.cpp
+  parser_tests.cpp
 )
 
 target_link_libraries(luca_tests PRIVATE
