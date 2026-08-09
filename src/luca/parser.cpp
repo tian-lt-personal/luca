@@ -41,10 +41,10 @@ ast::term* make_term(ast::context& actx, T value) {
 
 class parser {
  public:
-  explicit parser(const std::string& source, sema& s)
+  explicit parser(const std::string& source)
       : lex_(source),
-        sema_(s),
         actx_{std::make_unique<std::pmr::monotonic_buffer_resource>()},
+        sema_(actx_),
         curtok_(lex_.next()),
         nextok_(lex_.next()) {}
   parse_result run_pass() && {
@@ -169,7 +169,7 @@ class parser {
     advance();
     auto cond = parse_expr(0);
     if (!cond.has_value()) return std::unexpected{parse_err_unknown{}};
-    if (auto ty = type_of(*cond); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
+    if (auto ty = sema_.type_of(*cond); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
       return std::unexpected{parse_err_unknown{}};
     if (!expect<tk::kw_then>()) return std::unexpected{parse_err_unknown{}};
     auto then_expr = parse_expr(0);
@@ -177,6 +177,9 @@ class parser {
     if (!expect<tk::kw_else>()) return std::unexpected{parse_err_unknown{}};
     auto else_expr = parse_expr(0);
     if (!else_expr.has_value()) return std::unexpected{parse_err_unknown{}};
+    if (auto then_ty = sema_.type_of(*then_expr), else_ty = sema_.type_of(*else_expr);
+        then_ty.has_value() && else_ty.has_value() && then_ty->index() != else_ty->index())
+      return std::unexpected{parse_err_unknown{}};
     return ast::term{ast::ifexpr{.cond = make_term(actx_, *std::move(cond)),
                                  .then = make_term(actx_, *std::move(then_expr)),
                                  .els = make_term(actx_, *std::move(else_expr))}};
@@ -206,15 +209,12 @@ class parser {
 
  private:
   lexer lex_;
-  sema& sema_;
   ast::context actx_;
+  sema sema_;
   lex_result curtok_;
   lex_result nextok_;
 };
 
 }  // namespace
 
-parse_result parse(const std::string& source) {
-  sema s;
-  return parser{source, s}.run_pass();
-}
+parse_result parse(const std::string& source) { return parser{source}.run_pass(); }

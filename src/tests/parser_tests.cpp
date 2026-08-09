@@ -348,11 +348,8 @@ TEST(parser_tests, if_simple) {
 }
 
 TEST(parser_tests, if_with_binop_cond) {
-  auto r = parse_ok("if 1 + 2 then 3 else 4");
-  const auto& ie = as<ast::ifexpr>(r->first);
-  EXPECT_TRUE(is<ast::binop>(*ie.cond));
-  EXPECT_EQ(as<ast::li_int>(*ie.then).value, 3);
-  EXPECT_EQ(as<ast::li_int>(*ie.els).value, 4);
+  auto r = parse("if 1 + 2 then 3 else 4");
+  EXPECT_FALSE(r.has_value());
 }
 
 TEST(parser_tests, if_parenthesized_branches) {
@@ -416,6 +413,7 @@ INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
                          ::testing::Values("\\", "\\int . x", "\\x int . x", "\\x : int", "\\x : int .",
                                            "\\x : if . x"));
 INSTANTIATE_TEST_SUITE_P(if_expr, parser_error_theory,
-                         ::testing::Values("if true 1 else 2", "if true then 1 2", "if 42 then 1 else 2"));
+                         ::testing::Values("if true 1 else 2", "if true then 1 2", "if 42 then 1 else 2",
+                                           "if true then 1 else true"));
 
 }  // namespace tests
