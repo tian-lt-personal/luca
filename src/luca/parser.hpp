@@ -1,10 +1,11 @@
 #pragma once
 
 // std
-#include <expected>
+#include <exception>
 #include <memory>
 #include <memory_resource>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <variant>
 // luca
@@ -59,8 +60,18 @@ struct context {
 
 }  // namespace ast
 
-struct parse_err_unknown {};
-using parse_err = std::variant<parse_err_unknown, lex_err>;
+struct parse_err : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
 
-using parse_result = std::expected<std::pair<ast::term, ast::context>, parse_err>;
+struct parse_err_unknown : parse_err {
+  parse_err_unknown() : parse_err{"unknown parse error"} {}
+};
+
+struct parse_err_with_lexer_err : parse_err {
+  lex_err err;
+  explicit parse_err_with_lexer_err(lex_err e) : parse_err{"lexer error"}, err{std::move(e)} {}
+};
+
+using parse_result = std::pair<ast::term, ast::context>;
 parse_result parse(const std::string& source);
