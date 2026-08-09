@@ -41,6 +41,12 @@ ast::term* make_term(ast::context& actx, T value) {
   return alloc.new_object<ast::term>(std::move(value));
 }
 
+template <class T>
+ast::type* make_type(ast::context& actx, T value) {
+  std::pmr::polymorphic_allocator<ast::type> alloc{actx.arena.get()};
+  return alloc.new_object<ast::type>(std::move(value));
+}
+
 class parser {
  public:
   explicit parser(const std::string& source)
@@ -126,6 +132,40 @@ class parser {
                       },
                       tok);
   }
+  ast::type parse_type() {
+    auto base = std::visit(overloaded{
+                               [this](tk::kw_int) -> ast::type {
+                                 advance();
+                                 return ast::type{ast::type_int{}};
+                               },
+                               [this](tk::kw_bool) -> ast::type {
+                                 advance();
+                                 return ast::type{ast::type_bool{}};
+                               },
+                               [this](tk::kw_string) -> ast::type {
+                                 advance();
+                                 return ast::type{ast::type_string{}};
+                               },
+                               [this](tk::lparen) -> ast::type {
+                                 advance();
+                                 if (std::holds_alternative<tk::rparen>(peek())) {
+                                   advance();
+                                   return ast::type{ast::type_unit{}};
+                                 }
+                                 auto inner = parse_type();
+                                 expect<tk::rparen>();
+                                 return inner;
+                               },
+                               [](auto) -> ast::type { throw parse_err_unknown{}; },
+                           },
+                           peek());
+    if (curtok_.has_value() && std::holds_alternative<tk::op_arrow>(*curtok_)) {
+      advance();
+      return ast::type{
+          ast::type_arrow{.from = make_type(actx_, std::move(base)), .to = make_type(actx_, parse_type())}};
+    }
+    return base;
+  }
   ast::term parse_lambda() {
     advance();
     check_curtok();
@@ -135,30 +175,10 @@ class parser {
     auto name = id->name;
     advance();
     expect<tk::op_colon>();
-    auto param_type = std::visit(overloaded{
-                                     [this](tk::kw_int) -> ast::type {
-                                       advance();
-                                       return ast::type{ast::type_int{}};
-                                     },
-                                     [this](tk::kw_bool) -> ast::type {
-                                       advance();
-                                       return ast::type{ast::type_bool{}};
-                                     },
-                                     [this](tk::kw_string) -> ast::type {
-                                       advance();
-                                       return ast::type{ast::type_string{}};
-                                     },
-                                     [this](tk::lparen) -> ast::type {
-                                       advance();
-                                       expect<tk::rparen>();
-                                       return ast::type{ast::type_unit{}};
-                                     },
-                                     [](auto) -> ast::type { throw parse_err_unknown{}; },
-                                 },
-                                 peek());
+    auto param_type = parse_type();
 
     expect<tk::op_dot>();
-    sema_.push_binding(name);
+    sema_.push_binding(name, param_type);
     auto body = parse_expr(0);
     sema_.pop_binding();
     return ast::term{ast::abst{.param_type = std::move(param_type), .body = make_term(actx_, std::move(body))}};
@@ -194,7 +214,7 @@ class parser {
     if (!bound_ty.has_value()) throw parse_err_unknown{};
 
     expect<tk::kw_in>();
-    sema_.push_binding(name);
+    sema_.push_binding(name, *bound_ty);
     auto body = parse_expr(0);
     sema_.pop_binding();
 

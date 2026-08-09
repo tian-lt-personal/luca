@@ -78,6 +78,9 @@ struct op_lt {
 struct op_comma {
   friend std::strong_ordering operator<=>(op_comma, op_comma) = default;
 };
+struct op_arrow {
+  friend std::strong_ordering operator<=>(op_arrow, op_arrow) = default;
+};
 struct op_colon {
   friend std::strong_ordering operator<=>(op_colon, op_colon) = default;
 };
@@ -96,5 +99,5 @@ struct rparen {
 using token = std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true,
                            tk::kw_false,
                            tk::kw_bool, tk::kw_int, tk::kw_string, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus,
-                           tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_comma,
-                           tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;
+                           tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_arrow,
+                           tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;

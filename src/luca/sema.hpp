@@ -11,7 +11,7 @@ class sema {
   explicit sema(ast::context& ctx) noexcept : ctx_{&ctx} {}
 
   std::optional<int> resolve_binding_index(std::string_view name) const;
-  void push_binding(std::string_view name);
+  void push_binding(std::string_view name, ast::type ty);
   void pop_binding();
 
   std::optional<ast::type> type_of(const ast::term& t) noexcept;
@@ -19,4 +19,5 @@ class sema {
  private:
   ast::context* ctx_;
   std::vector<std::string_view> bindings_;
+  std::vector<ast::type> binding_types_;
 };
