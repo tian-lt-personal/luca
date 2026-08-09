@@ -13,6 +13,12 @@ struct id {
 struct kw_lambda {
   friend std::strong_ordering operator<=>(kw_lambda, kw_lambda) = default;
 };
+struct kw_let {
+  friend std::strong_ordering operator<=>(kw_let, kw_let) = default;
+};
+struct kw_in {
+  friend std::strong_ordering operator<=>(kw_in, kw_in) = default;
+};
 struct kw_if {
   friend std::strong_ordering operator<=>(kw_if, kw_if) = default;
 };
@@ -87,7 +93,8 @@ struct rparen {
 
 }  // namespace tk
 
-using token = std::variant<tk::id, tk::kw_lambda, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true, tk::kw_false,
+using token = std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true,
+                           tk::kw_false,
                            tk::kw_bool, tk::kw_int, tk::kw_string, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus,
                            tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_comma,
                            tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;

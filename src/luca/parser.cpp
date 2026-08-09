@@ -82,6 +82,7 @@ class parser {
     if (!curtok_.has_value()) throw parse_err_with_lexer_err{curtok_.error()};
     return std::visit(overloaded{
                           [this](tk::kw_lambda) { return parse_lambda(); },
+                          [this](tk::kw_let) { return parse_let(); },
                           [this](tk::kw_if) { return parse_if(); },
                           [this](tk::lparen) -> ast::term {
                             advance();
@@ -119,7 +120,7 @@ class parser {
   }
   ast::term parse_lambda() {
     advance();
-    if (!curtok_.has_value()) throw parse_err_unknown{};
+    check_curtok();
 
     auto* id = std::get_if<tk::id>(&peek());
     if (!id) throw parse_err_unknown{};
@@ -170,6 +171,30 @@ class parser {
                                  .then = make_term(actx_, std::move(then_expr)),
                                  .els = make_term(actx_, std::move(else_expr))}};
   }
+  ast::term parse_let() {
+    advance();
+    check_curtok();
+
+    auto* id = std::get_if<tk::id>(&peek());
+    if (!id) throw parse_err_unknown{};
+    auto name = id->name;
+    advance();
+
+    expect<tk::op_eq>();
+    auto bound_expr = parse_expr(0);
+    auto bound_ty = sema_.type_of(bound_expr);
+    if (!bound_ty.has_value()) throw parse_err_unknown{};
+
+    expect<tk::kw_in>();
+    sema_.push_binding(name);
+    auto body = parse_expr(0);
+    sema_.pop_binding();
+
+    return ast::term{ast::appl{
+        .func = make_term(
+            actx_, ast::term{ast::abst{.param_type = *std::move(bound_ty), .body = make_term(actx_, std::move(body))}}),
+        .arg = make_term(actx_, std::move(bound_expr))}};
+  }
   ast::term parse_infix(ast::term left, token op) {
     int prec = *infix_precedence(op);
     auto right = parse_expr(prec);
@@ -187,6 +212,9 @@ class parser {
   void advance() noexcept {
     curtok_ = nextok_;
     nextok_ = lex_.next();
+  }
+  void check_curtok() const {
+    if (!curtok_.has_value()) throw parse_err_unknown{};
   }
   template <class T>
   void expect() {

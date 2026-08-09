@@ -5,19 +5,22 @@
 ```ebnf
 program       ::= expr
 
-expr          ::= if-expr
+expr          ::= let-expr
+                | if-expr
                 | lambda
                 | bin-expr
+
+let-expr      ::= "let" id "=" expr "in" expr        (* desugars to (\id : typeof(expr) . expr) expr *)
 
 if-expr       ::= "if" expr "then" expr "else" expr
 
 lambda        ::= ("\" | "lambda") id ":" type "." expr
 
-bin-expr      ::= apply { ("+" | "-" | "*" | "/") apply }    (* left-associative *)
+bin-expr      ::= apply { ("+" | "-" | "*" | "/" | "=" | "!=" | ">" | "<") apply }    (* left-associative *)
 
-apply         ::= unary { unary }               (* left-associative implicit application *)
+apply         ::= unary { unary }                     (* left-associative implicit application *)
 
-unary         ::= "-" unary                     (* desugared to "0 - operand" *)
+unary         ::= "-" unary                           (* desugared to "0 - operand" *)
                 | atomic
 
 atomic        ::= id
@@ -29,7 +32,7 @@ atomic        ::= id
 type          ::= "int"
                 | "bool"
                 | "string"
-                | "(" ")"                        (* unit type *)
+                | "(" ")"                              (* unit type *)
 ```
 
 #### Lexical Tokens
@@ -43,15 +46,18 @@ integer       ::= [0-9]+
 
 | Level | Construct              | Prec |
 |-------|------------------------|------|
-| 4     | Application            | 40   |
-| 3     | Unary `-`              | 30   |
-| 2     | `*` `/`                | 20   |
-| 1     | `+` `-` (binary)       | 10   |
+| 5     | Application            | 50   |
+| 4     | Unary `-`              | 40   |
+| 3     | `*` `/`                | 30   |
+| 2     | `+` `-` (binary)       | 20   |
+| 1     | `=` `!=` `>` `<`       | 10   |
 
 #### Notes
 
 - The lambda body extends as far right as possible: `\x:int . x y` parses as `\x:int . (x y)`.
 - `then`/`else` keywords delimit `if` branches; each branch is a full expression.
 - Unary minus `-x` desugars to `0 - x`.
+- `let x = E1 in E2` desugars to `(\x : typeof(E1) . E2) E1`; the type of E1 must be deducible by Sema.
+- `let` expressions right-associate: `let x = 1 in let y = 2 in x + y`.
 - Identifiers support hyphens: `foo-bar` is a single identifier.
 - String literals (`"..."`) are lexed but not yet represented in the AST.

@@ -42,6 +42,8 @@ lex_result lexer::next() noexcept {
 
     "\\"        { return tk::kw_lambda{}; }
     "lambda"    { return tk::kw_lambda{}; }
+    "let"       { return tk::kw_let{}; }
+    "in"        { return tk::kw_in{}; }
     "if"        { return tk::kw_if{}; }
     "then"      { return tk::kw_then{}; }
     "else"      { return tk::kw_else{}; }

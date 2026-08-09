@@ -182,6 +182,51 @@ TEST(parser_tests, comparison_as_if_cond) {
   EXPECT_TRUE(std::holds_alternative<tk::op_lt>(cmp.op));
 }
 
+// -- let-in expressions -------------------------------------------------------
+
+TEST(parser_tests, let_simple) {
+  auto r = parse_ok("let x = 1 in x");
+  // desugars to (\x : int . x) 1
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
+  EXPECT_EQ(as<ast::var>(*ab.body).index, 0);
+  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 1);
+}
+
+TEST(parser_tests, let_with_binop_body) {
+  auto r = parse_ok("let x = 1 in x + x");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
+  const auto& body = as<ast::binop>(*ab.body);
+  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(body.op));
+}
+
+TEST(parser_tests, let_nested) {
+  auto r = parse_ok("let x = 1 in let y = 2 in x + y");
+  // desugars to: (\x:int. (\y:int. x + y) 2) 1
+  const auto& outer_app = as<ast::appl>(r.first);
+  const auto& outer_abst = as<ast::abst>(*outer_app.func);
+  EXPECT_EQ(as<ast::li_int>(*outer_app.arg).value, 1);
+  // body of outer abst is the inner let: (\y:int. x + y) 2
+  const auto& inner_app = as<ast::appl>(*outer_abst.body);
+  const auto& inner_abst = as<ast::abst>(*inner_app.func);
+  EXPECT_EQ(as<ast::li_int>(*inner_app.arg).value, 2);
+  // body of inner abst is x + y (binop)
+  const auto& body = as<ast::binop>(*inner_abst.body);
+  // x bound by outer let (1 binder out), y bound by inner let (0)
+  EXPECT_EQ(as<ast::var>(*body.left).index, 1);
+  EXPECT_EQ(as<ast::var>(*body.right).index, 0);
+}
+
+TEST(parser_tests, let_bool_bound) {
+  auto r = parse_ok("let x = true in if x then 1 else 0");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
+}
+
 // -- unary minus -------------------------------------------------------------
 
 TEST(parser_tests, unary_minus_integer) {
@@ -458,5 +503,8 @@ INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
 INSTANTIATE_TEST_SUITE_P(if_expr, parser_error_theory,
                          ::testing::Values("if true 1 else 2", "if true then 1 2", "if 42 then 1 else 2",
                                            "if true then 1 else true"));
+
+INSTANTIATE_TEST_SUITE_P(let_expr, parser_error_theory,
+                         ::testing::Values("let x = f y in x", "let 1 = 2 in 3", "let x = 1 2"));
 
 }  // namespace tests

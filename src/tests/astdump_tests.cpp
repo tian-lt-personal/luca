@@ -291,4 +291,23 @@ TEST(astdump_tests, full_json_output_y_combinator) {
   EXPECT_EQ(j, expected);
 }
 
+TEST(astdump_tests, let_simple) {
+  auto r = parse_ok("let x = 1 in x");
+  auto j = dump(r.first);
+  auto expected = nlohmann::json::parse(R"(
+    {
+      "appl": {
+        "func": {
+          "abst": {
+            "param_type": {"int": {}},
+            "body": {"var": {"index": 0}}
+          }
+        },
+        "arg": {"li_int": {"value": 1}}
+      }
+    }
+  )");
+  EXPECT_EQ(j, expected);
+}
+
 }  // namespace tests
