@@ -310,4 +310,46 @@ TEST(astdump_tests, let_simple) {
   EXPECT_EQ(j, expected);
 }
 
+TEST(astdump_tests, let_chain_free_and_bound) {
+  auto r = parse_ok("let x = 1 in let y = 2 in (g x) + y");
+  // desugars to: (\x:int. (\y:int. (g x) + y) 2) 1
+  // g = free (nullopt), x = index 1, y = index 0
+  auto j = dump(r.first);
+  auto expected = nlohmann::json::parse(R"(
+    {
+      "appl": {
+        "func": {
+          "abst": {
+            "param_type": {"int": {}},
+            "body": {
+              "appl": {
+                "func": {
+                  "abst": {
+                    "param_type": {"int": {}},
+                    "body": {
+                      "binop": {
+                        "op": "+",
+                        "left": {
+                          "appl": {
+                            "func": {"var": {"index": null}},
+                            "arg": {"var": {"index": 1}}
+                          }
+                        },
+                        "right": {"var": {"index": 0}}
+                      }
+                    }
+                  }
+                },
+                "arg": {"li_int": {"value": 2}}
+              }
+            }
+          }
+        },
+        "arg": {"li_int": {"value": 1}}
+      }
+    }
+  )");
+  EXPECT_EQ(j, expected);
+}
+
 }  // namespace tests
