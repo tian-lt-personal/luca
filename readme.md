@@ -18,3 +18,7 @@ cd src
 cmake --preset vsdbg
 cmake --build --preset vsdbg
 ```
+
+### Language Reference
+For the full syntax reference, see [Language Reference](src/readme.md).
+
