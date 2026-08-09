@@ -37,7 +37,7 @@ TEST(astdump_tests, boolean_false) {
 TEST(astdump_tests, variable) {
   auto r = parse_ok("x");
   auto j = dump(r->first);
-  EXPECT_EQ(j, nlohmann::json::parse(R"({"var":{"index":-1}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"var":{"index":null}})"));
 }
 TEST(astdump_tests, bound_variable) {
   auto r = parse_ok("\\x : int . x");
@@ -83,8 +83,8 @@ TEST(astdump_tests, unary_minus) {
 TEST(astdump_tests, application_single) {
   auto r = parse_ok("f x");
   auto j = dump(r->first);
-  EXPECT_EQ(j["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":-1}})"));
-  EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"var":{"index":-1}})"));
+  EXPECT_EQ(j["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":null}})"));
+  EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"var":{"index":null}})"));
 }
 TEST(astdump_tests, application_left_assoc) {
   auto r = parse_ok("f x y");
@@ -95,7 +95,7 @@ TEST(astdump_tests, application_left_assoc) {
 TEST(astdump_tests, application_with_literal) {
   auto r = parse_ok("f 42");
   auto j = dump(r->first);
-  EXPECT_EQ(j["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":-1}})"));
+  EXPECT_EQ(j["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":null}})"));
   EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":42}})"));
 }
 

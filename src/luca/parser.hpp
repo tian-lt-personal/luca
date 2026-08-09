@@ -4,6 +4,7 @@
 #include <expected>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <string>
 #include <variant>
 // luca
@@ -24,7 +25,7 @@ struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arr
 
 struct term;
 struct var {
-  int index;  // de bruijn index
+  std::optional<int> index;  // de bruijn index
 };
 struct abst {
   type param_type;

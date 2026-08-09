@@ -51,7 +51,7 @@ TEST(parser_tests, boolean_false) {
 TEST(parser_tests, variable) {
   auto r = parse_ok("x");
   EXPECT_TRUE(is<ast::var>(r->first));
-  EXPECT_EQ(as<ast::var>(r->first).index, -1);  // free variable
+  EXPECT_EQ(as<ast::var>(r->first).index, std::nullopt);  // free variable
 }
 
 // -- binary ops --------------------------------------------------------------
@@ -256,31 +256,36 @@ TEST(parser_tests, parens_application_rhs) {
 
 TEST(parser_tests, lambda_int_param) {
   auto r = parse_ok("\\x : int . x");
-  const auto& ab = as<ast::abst>(r->first);  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
+  const auto& ab = as<ast::abst>(r->first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
   EXPECT_TRUE(is<ast::var>(*ab.body));
 }
 
 TEST(parser_tests, lambda_bool_param) {
   auto r = parse_ok("\\x : bool . true");
-  const auto& ab = as<ast::abst>(r->first);  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
+  const auto& ab = as<ast::abst>(r->first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
   EXPECT_EQ(as<ast::li_bool>(*ab.body).value, true);
 }
 
 TEST(parser_tests, lambda_string_param) {
   auto r = parse_ok("\\x : string . 0");
-  const auto& ab = as<ast::abst>(r->first);  EXPECT_TRUE(std::holds_alternative<ast::type_string>(ab.param_type));
+  const auto& ab = as<ast::abst>(r->first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_string>(ab.param_type));
   EXPECT_EQ(as<ast::li_int>(*ab.body).value, 0);
 }
 
 TEST(parser_tests, lambda_unit_param) {
   auto r = parse_ok("\\x : () . 42");
-  const auto& ab = as<ast::abst>(r->first);  EXPECT_TRUE(std::holds_alternative<ast::type_unit>(ab.param_type));
+  const auto& ab = as<ast::abst>(r->first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_unit>(ab.param_type));
   EXPECT_EQ(as<ast::li_int>(*ab.body).value, 42);
 }
 
 TEST(parser_tests, lambda_keyword_syntax) {
   auto r = parse_ok("lambda x : int . x");
-  const auto& ab = as<ast::abst>(r->first);  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
+  const auto& ab = as<ast::abst>(r->first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
 }
 
 TEST(parser_tests, lambda_body_extends_right) {

@@ -105,10 +105,10 @@ class parser {
                             tok);
         });
   }
-  int resolve(std::string_view name) const noexcept {
+  std::optional<int> resolve(std::string_view name) const noexcept {
     for (int i = static_cast<int>(bindings_.size()) - 1; i >= 0; --i)
       if (bindings_[i] == name) return static_cast<int>(bindings_.size()) - 1 - i;
-    return -1;  // free variable
+    return std::nullopt;  // free variable
   }
   term_result parse_atom() {
     auto tok = peek();
@@ -137,28 +137,28 @@ class parser {
 
     if (!expect<tk::op_colon>()) return std::unexpected{parse_err_unknown{}};
 
-    auto param_type = std::visit(
-        overloaded{
-            [this](tk::kw_int) -> std::expected<ast::type, parse_err> {
-              advance();
-              return ast::type{ast::type_int{}};
-            },
-            [this](tk::kw_bool) -> std::expected<ast::type, parse_err> {
-              advance();
-              return ast::type{ast::type_bool{}};
-            },
-            [this](tk::kw_string) -> std::expected<ast::type, parse_err> {
-              advance();
-              return ast::type{ast::type_string{}};
-            },
-            [this](tk::lparen) -> std::expected<ast::type, parse_err> {
-              advance();
-              if (!expect<tk::rparen>()) return std::unexpected{parse_err_unknown{}};
-              return ast::type{ast::type_unit{}};
-            },
-            [](auto) -> std::expected<ast::type, parse_err> { return std::unexpected{parse_err_unknown{}}; },
-        },
-        peek());
+    auto param_type =
+        std::visit(overloaded{
+                       [this](tk::kw_int) -> std::expected<ast::type, parse_err> {
+                         advance();
+                         return ast::type{ast::type_int{}};
+                       },
+                       [this](tk::kw_bool) -> std::expected<ast::type, parse_err> {
+                         advance();
+                         return ast::type{ast::type_bool{}};
+                       },
+                       [this](tk::kw_string) -> std::expected<ast::type, parse_err> {
+                         advance();
+                         return ast::type{ast::type_string{}};
+                       },
+                       [this](tk::lparen) -> std::expected<ast::type, parse_err> {
+                         advance();
+                         if (!expect<tk::rparen>()) return std::unexpected{parse_err_unknown{}};
+                         return ast::type{ast::type_unit{}};
+                       },
+                       [](auto) -> std::expected<ast::type, parse_err> { return std::unexpected{parse_err_unknown{}}; },
+                   },
+                   peek());
     if (!param_type.has_value()) return std::unexpected{parse_err_unknown{}};
 
     if (!expect<tk::op_dot>()) return std::unexpected{parse_err_unknown{}};
