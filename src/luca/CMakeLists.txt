@@ -17,6 +17,7 @@ add_library(luca STATIC
   astdump.hpp
   lexer.cpp
   parser.cpp
+  sema.cpp
 )
 target_compile_features(luca PUBLIC cxx_std_23)
 target_include_directories(luca PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

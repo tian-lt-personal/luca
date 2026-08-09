@@ -1,11 +1,11 @@
 // std
 #include <cassert>
 #include <optional>
-#include <vector>
 // luca
 #include "lexer.hpp"
 #include "mp.hpp"
 #include "parser.hpp"
+#include "sema.hpp"
 
 namespace {
 
@@ -41,8 +41,9 @@ ast::term* make_term(ast::context& actx, T value) {
 
 class parser {
  public:
-  explicit parser(const std::string& source)
+  explicit parser(const std::string& source, sema& s)
       : lex_(source),
+        sema_(s),
         actx_{std::make_unique<std::pmr::monotonic_buffer_resource>()},
         curtok_(lex_.next()),
         nextok_(lex_.next()) {}
@@ -105,26 +106,22 @@ class parser {
                             tok);
         });
   }
-  std::optional<int> resolve(std::string_view name) const noexcept {
-    for (int i = static_cast<int>(bindings_.size()) - 1; i >= 0; --i)
-      if (bindings_[i] == name) return static_cast<int>(bindings_.size()) - 1 - i;
-    return std::nullopt;  // free variable
-  }
   term_result parse_atom() {
     auto tok = peek();
     advance();
-    return std::visit(overloaded{
-                          [this](tk::id id) -> term_result { return ast::term{ast::var{resolve(id.name)}}; },
-                          [](tk::li_int lit) -> term_result {
-                            int val = 0;
-                            for (char c : lit.value) val = val * 10 + (c - '0');
-                            return ast::term{ast::li_int{val}};
-                          },
-                          [](tk::kw_true) -> term_result { return ast::term{ast::li_bool{true}}; },
-                          [](tk::kw_false) -> term_result { return ast::term{ast::li_bool{false}}; },
-                          [](auto) -> term_result { return std::unexpected{parse_err_unknown{}}; },
-                      },
-                      tok);
+    return std::visit(
+        overloaded{
+            [this](tk::id id) -> term_result { return ast::term{ast::var{sema_.resolve_binding_index(id.name)}}; },
+            [](tk::li_int lit) -> term_result {
+              int val = 0;
+              for (char c : lit.value) val = val * 10 + (c - '0');
+              return ast::term{ast::li_int{val}};
+            },
+            [](tk::kw_true) -> term_result { return ast::term{ast::li_bool{true}}; },
+            [](tk::kw_false) -> term_result { return ast::term{ast::li_bool{false}}; },
+            [](auto) -> term_result { return std::unexpected{parse_err_unknown{}}; },
+        },
+        tok);
   }
   term_result parse_lambda() {
     advance();
@@ -162,9 +159,9 @@ class parser {
     if (!param_type.has_value()) return std::unexpected{parse_err_unknown{}};
 
     if (!expect<tk::op_dot>()) return std::unexpected{parse_err_unknown{}};
-    bindings_.emplace_back(name);
+    sema_.push_binding(name);
     auto body = parse_expr(0);
-    bindings_.pop_back();
+    sema_.pop_binding();
     if (!body.has_value()) return std::unexpected{parse_err_unknown{}};
     return ast::term{ast::abst{.param_type = *param_type, .body = make_term(actx_, *std::move(body))}};
   }
@@ -207,12 +204,15 @@ class parser {
 
  private:
   lexer lex_;
+  sema& sema_;
   ast::context actx_;
   lex_result curtok_;
   lex_result nextok_;
-  std::vector<std::string> bindings_;
 };
 
 }  // namespace
 
-parse_result parse(const std::string& source) { return parser{source}.run_pass(); }
+parse_result parse(const std::string& source) {
+  sema s;
+  return parser{source, s}.run_pass();
+}
