@@ -33,6 +33,9 @@ lex_result lexer::next() noexcept {
     "*"        { return tk::op_mul{}; }
     "/"        { return tk::op_div{}; }
     "="        { return tk::op_eq{}; }
+    "!="       { return tk::op_ne{}; }
+    ">"        { return tk::op_gt{}; }
+    "<"        { return tk::op_lt{}; }
     ","        { return tk::op_comma{}; }
     ":"        { return tk::op_colon{}; }
     "."        { return tk::op_dot{}; }

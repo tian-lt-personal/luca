@@ -169,6 +169,10 @@ class parser {
   ast::term parse_infix(ast::term left, token op) {
     int prec = *infix_precedence(op);
     auto right = parse_expr(prec);
+    if (auto lty = sema_.type_of(left), rty = sema_.type_of(right);
+        lty.has_value() && rty.has_value() &&
+        (!std::holds_alternative<ast::type_int>(*lty) || !std::holds_alternative<ast::type_int>(*rty)))
+      throw parse_err_unknown{};
     return ast::term{ast::binop{
         .op = std::move(op), .left = make_term(actx_, std::move(left)), .right = make_term(actx_, std::move(right))}};
   }

@@ -47,19 +47,28 @@ struct li_str {
 };
 struct op_plus {
   friend std::strong_ordering operator<=>(op_plus, op_plus) = default;
-};  // +
+};
 struct op_minus {
   friend std::strong_ordering operator<=>(op_minus, op_minus) = default;
-};  // -
+};
 struct op_mul {
   friend std::strong_ordering operator<=>(op_mul, op_mul) = default;
-};  // *
+};
 struct op_div {
   friend std::strong_ordering operator<=>(op_div, op_div) = default;
-};  // /
+};
+struct op_ne {
+  friend std::strong_ordering operator<=>(op_ne, op_ne) = default;
+};
 struct op_eq {
   friend std::strong_ordering operator<=>(op_eq, op_eq) = default;
-};  // =
+};
+struct op_gt {
+  friend std::strong_ordering operator<=>(op_gt, op_gt) = default;
+};
+struct op_lt {
+  friend std::strong_ordering operator<=>(op_lt, op_lt) = default;
+};
 struct op_comma {
   friend std::strong_ordering operator<=>(op_comma, op_comma) = default;
 };
@@ -78,7 +87,7 @@ struct rparen {
 
 }  // namespace tk
 
-using token =
-    std::variant<tk::id, tk::kw_lambda, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true, tk::kw_false, tk::kw_bool,
-                 tk::kw_int, tk::kw_string, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus, tk::op_mul, tk::op_div,
-                 tk::op_eq, tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;
+using token = std::variant<tk::id, tk::kw_lambda, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true, tk::kw_false,
+                           tk::kw_bool, tk::kw_int, tk::kw_string, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus,
+                           tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_comma,
+                           tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;

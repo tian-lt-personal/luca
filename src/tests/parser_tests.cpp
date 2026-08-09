@@ -405,7 +405,8 @@ TEST(parser_tests, complex_nesting) {
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};
 TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam()), parse_err); }
 
-INSTANTIATE_TEST_SUITE_P(general, parser_error_theory, ::testing::Values("", ")", "(1 + 2", "1 +", "int"));
+INSTANTIATE_TEST_SUITE_P(general, parser_error_theory,
+                         ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true"));
 INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
                          ::testing::Values("\\", "\\int . x", "\\x int . x", "\\x : int", "\\x : int .",
                                            "\\x : if . x"));
