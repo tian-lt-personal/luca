@@ -55,7 +55,12 @@ class parser {
   }
 
  private:
-  ast::term parse_tem() { return parse_expr(0); }
+  ast::term parse_tem() {
+    auto t = parse_expr(0);
+    if (auto ty = sema_.type_of(t); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
+      throw parse_err_unknown{};
+    return t;
+  }
   ast::term parse_expr(int precedence) {
     auto left = parse_prefix();
     while (true) {
@@ -104,19 +109,22 @@ class parser {
   ast::term parse_atom() {
     auto tok = peek();
     advance();
-    return std::visit(
-        overloaded{
-            [this](tk::id id) -> ast::term { return ast::term{ast::var{sema_.resolve_binding_index(id.name)}}; },
-            [](tk::li_int lit) -> ast::term {
-              int val = 0;
-              for (char c : lit.value) val = val * 10 + (c - '0');
-              return ast::term{ast::li_int{val}};
-            },
-            [](tk::kw_true) -> ast::term { return ast::term{ast::li_bool{true}}; },
-            [](tk::kw_false) -> ast::term { return ast::term{ast::li_bool{false}}; },
-            [](auto) -> ast::term { throw parse_err_unknown{}; },
-        },
-        tok);
+    return std::visit(overloaded{
+                          [this](tk::id id) -> ast::term {
+                            auto idx = sema_.resolve_binding_index(id.name);
+                            if (!idx.has_value()) throw parse_err_unknown{};
+                            return ast::term{ast::var{*idx}};
+                          },
+                          [](tk::li_int lit) -> ast::term {
+                            int val = 0;
+                            for (char c : lit.value) val = val * 10 + (c - '0');
+                            return ast::term{ast::li_int{val}};
+                          },
+                          [](tk::kw_true) -> ast::term { return ast::term{ast::li_bool{true}}; },
+                          [](tk::kw_false) -> ast::term { return ast::term{ast::li_bool{false}}; },
+                          [](auto) -> ast::term { throw parse_err_unknown{}; },
+                      },
+                      tok);
   }
   ast::term parse_lambda() {
     advance();

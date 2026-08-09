@@ -51,10 +51,10 @@ TEST(parser_tests, boolean_false) {
   EXPECT_EQ(as<ast::li_bool>(r.first).value, false);
 }
 
-TEST(parser_tests, variable) {
-  auto r = parse_ok("x");
-  EXPECT_TRUE(is<ast::var>(r.first));
-  EXPECT_EQ(as<ast::var>(r.first).index, std::nullopt);  // free variable
+TEST(parser_tests, variable_bound) {
+  auto r = parse_ok("\\x : int . x");
+  const auto& ab = as<ast::abst>(r.first);
+  EXPECT_EQ(as<ast::var>(*ab.body).index, 0);
 }
 
 // -- binary ops --------------------------------------------------------------
@@ -272,49 +272,58 @@ TEST(parser_tests, double_unary_minus) {
 // -- implicit application ----------------------------------------------------
 
 TEST(parser_tests, application_single) {
-  auto r = parse_ok("f x");
-  const auto& a = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::var>(*a.func));
-  EXPECT_TRUE(is<ast::var>(*a.arg));
+  auto r = parse_ok("\\f : int . \\x : int . f x");
+  const auto& outer = as<ast::abst>(r.first);
+  const auto& inner = as<ast::abst>(*outer.body);
+  const auto& a = as<ast::appl>(*inner.body);
+  EXPECT_EQ(as<ast::var>(*a.func).index, 1);  // f: two binders out
+  EXPECT_EQ(as<ast::var>(*a.arg).index, 0);   // x: innermost
 }
 
 TEST(parser_tests, application_left_associative) {
-  auto r = parse_ok("f x y");
-  const auto& outer = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::var>(*outer.arg));
+  auto r = parse_ok("\\f : int . \\x : int . \\y : int . f x y");
+  const auto& a0 = as<ast::abst>(r.first);
+  const auto& a1 = as<ast::abst>(*a0.body);
+  const auto& a2 = as<ast::abst>(*a1.body);
+  const auto& outer = as<ast::appl>(*a2.body);
   const auto& inner = as<ast::appl>(*outer.func);
   EXPECT_TRUE(is<ast::var>(*inner.func));
   EXPECT_TRUE(is<ast::var>(*inner.arg));
+  EXPECT_TRUE(is<ast::var>(*outer.arg));
 }
 
 TEST(parser_tests, application_with_literal) {
-  auto r = parse_ok("f 42");
-  const auto& a = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::var>(*a.func));
+  auto r = parse_ok("\\f : int . f 42");
+  const auto& ab = as<ast::abst>(r.first);
+  const auto& a = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
   EXPECT_EQ(as<ast::li_int>(*a.arg).value, 42);
 }
 
 TEST(parser_tests, application_prec_over_binop) {
-  auto r = parse_ok("f 1 + 2");
-  const auto& b = as<ast::binop>(r.first);
+  auto r = parse_ok("\\f : int . f 1 + 2");
+  const auto& ab = as<ast::abst>(r.first);
+  const auto& b = as<ast::binop>(*ab.body);
   EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
   const auto& a = as<ast::appl>(*b.left);
-  EXPECT_TRUE(is<ast::var>(*a.func));
+  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
   EXPECT_EQ(as<ast::li_int>(*a.arg).value, 1);
   EXPECT_EQ(as<ast::li_int>(*b.right).value, 2);
 }
 
 TEST(parser_tests, application_boolean_arg) {
-  auto r = parse_ok("f true");
-  const auto& a = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::var>(*a.func));
+  auto r = parse_ok("\\f : int . f true");
+  const auto& ab = as<ast::abst>(r.first);
+  const auto& a = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
   EXPECT_EQ(as<ast::li_bool>(*a.arg).value, true);
 }
 
 TEST(parser_tests, application_if_arg) {
-  auto r = parse_ok("f if true then 1 else 2");
-  const auto& a = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::var>(*a.func));
+  auto r = parse_ok("\\f : int . f if true then 1 else 2");
+  const auto& ab = as<ast::abst>(r.first);
+  const auto& a = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
   EXPECT_TRUE(is<ast::ifexpr>(*a.arg));
 }
 
@@ -337,8 +346,11 @@ TEST(parser_tests, parens_override_precedence) {
 }
 
 TEST(parser_tests, parens_application_rhs) {
-  auto r = parse_ok("(f x) y");
-  const auto& a = as<ast::appl>(r.first);
+  auto r = parse_ok("\\f : int . \\x : int . \\y : int . (f x) y");
+  const auto& a0 = as<ast::abst>(r.first);
+  const auto& a1 = as<ast::abst>(*a0.body);
+  const auto& a2 = as<ast::abst>(*a1.body);
+  const auto& a = as<ast::appl>(*a2.body);
   EXPECT_TRUE(is<ast::var>(*a.arg));
   const auto& inner = as<ast::appl>(*a.func);
   EXPECT_TRUE(is<ast::var>(*inner.func));
@@ -355,22 +367,25 @@ TEST(parser_tests, lambda_int_param) {
 }
 
 TEST(parser_tests, lambda_bool_param) {
-  auto r = parse_ok("\\x : bool . true");
-  const auto& ab = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\x : bool . true) false");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
   EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
   EXPECT_EQ(as<ast::li_bool>(*ab.body).value, true);
 }
 
 TEST(parser_tests, lambda_string_param) {
-  auto r = parse_ok("\\x : string . 0");
-  const auto& ab = as<ast::abst>(r.first);
+  auto r = parse_ok("let f = \\x : string . 0 in 1");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.arg);
   EXPECT_TRUE(std::holds_alternative<ast::type_string>(ab.param_type));
   EXPECT_EQ(as<ast::li_int>(*ab.body).value, 0);
 }
 
 TEST(parser_tests, lambda_unit_param) {
-  auto r = parse_ok("\\x : () . 42");
-  const auto& ab = as<ast::abst>(r.first);
+  auto r = parse_ok("let f = \\x : () . 42 in 1");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.arg);
   EXPECT_TRUE(std::holds_alternative<ast::type_unit>(ab.param_type));
   EXPECT_EQ(as<ast::li_int>(*ab.body).value, 42);
 }
@@ -382,17 +397,20 @@ TEST(parser_tests, lambda_keyword_syntax) {
 }
 
 TEST(parser_tests, lambda_body_extends_right) {
-  auto r = parse_ok("\\x : int . x y");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& a = as<ast::appl>(*ab.body);
-  EXPECT_TRUE(is<ast::var>(*a.func));
-  EXPECT_TRUE(is<ast::var>(*a.arg));
+  auto r = parse_ok("\\x : int . \\y : int . x y");
+  const auto& outer = as<ast::abst>(r.first);
+  const auto& inner = as<ast::abst>(*outer.body);
+  const auto& a = as<ast::appl>(*inner.body);
+  EXPECT_EQ(as<ast::var>(*a.func).index, 1);  // x: one binder out
+  EXPECT_EQ(as<ast::var>(*a.arg).index, 0);   // y: innermost
 }
 
 TEST(parser_tests, lambda_body_multi_app) {
-  auto r = parse_ok("\\x : int . x y z");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& outer = as<ast::appl>(*ab.body);
+  auto r = parse_ok("\\x : int . \\y : int . \\z : int . x y z");
+  const auto& a0 = as<ast::abst>(r.first);
+  const auto& a1 = as<ast::abst>(*a0.body);
+  const auto& a2 = as<ast::abst>(*a1.body);
+  const auto& outer = as<ast::appl>(*a2.body);
   EXPECT_TRUE(is<ast::var>(*outer.arg));
   const auto& inner = as<ast::appl>(*outer.func);
   EXPECT_TRUE(is<ast::var>(*inner.func));
@@ -476,15 +494,19 @@ TEST(parser_tests, lambda_in_if) {
 }
 
 TEST(parser_tests, if_in_lambda_body) {
-  auto r = parse_ok("\\x : int . if x then 1 else 0");
-  const auto& ab = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\x : int . if x then 1 else 0) 1");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
   EXPECT_TRUE(is<ast::ifexpr>(*ab.body));
 }
 
 TEST(parser_tests, complex_nesting) {
-  auto r = parse_ok("\\x : int . if x then f x + 1 else g y * 2");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& ie = as<ast::ifexpr>(*ab.body);
+  auto r = parse_ok("\\x : int . \\f : int . \\g : int . \\y : int . if x then f x + 1 else g y * 2");
+  const auto& a0 = as<ast::abst>(r.first);
+  const auto& a1 = as<ast::abst>(*a0.body);
+  const auto& a2 = as<ast::abst>(*a1.body);
+  const auto& a3 = as<ast::abst>(*a2.body);
+  const auto& ie = as<ast::ifexpr>(*a3.body);
   EXPECT_TRUE(is<ast::var>(*ie.cond));
   const auto& then_b = as<ast::binop>(*ie.then);
   EXPECT_TRUE(std::holds_alternative<tk::op_plus>(then_b.op));
@@ -496,7 +518,8 @@ struct parser_error_theory : ::testing::TestWithParam<std::string> {};
 TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam()), parse_err); }
 
 INSTANTIATE_TEST_SUITE_P(general, parser_error_theory,
-                         ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true", "true = 1"));
+                         ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true", "true = 1", "x",
+                                           "\\x : int . 42"));
 INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
                          ::testing::Values("\\", "\\int . x", "\\x int . x", "\\x : int", "\\x : int .",
                                            "\\x : if . x"));
