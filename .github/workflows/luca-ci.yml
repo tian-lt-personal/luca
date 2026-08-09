@@ -37,6 +37,14 @@ jobs:
       if: runner.os == 'Windows'
       run: choco install -y re2c
 
+    - name: Install libc++ (Clang)
+      if: matrix.preset == 'ci-clang'
+      run: |
+        sudo apt-get install -y libc++-dev libc++abi-dev
+        echo "CC=clang" >> "$GITHUB_ENV"
+        echo "CXX=clang++" >> "$GITHUB_ENV"
+        echo "CXXFLAGS=-stdlib=libc++" >> "$GITHUB_ENV"
+
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11
       with:

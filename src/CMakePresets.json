@@ -50,7 +50,7 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS": "-stdlib=libstdc++"
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++"
       }
     },
     {
