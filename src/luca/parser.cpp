@@ -169,6 +169,8 @@ class parser {
     advance();
     auto cond = parse_expr(0);
     if (!cond.has_value()) return std::unexpected{parse_err_unknown{}};
+    if (auto ty = type_of(*cond); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
+      return std::unexpected{parse_err_unknown{}};
     if (!expect<tk::kw_then>()) return std::unexpected{parse_err_unknown{}};
     auto then_expr = parse_expr(0);
     if (!then_expr.has_value()) return std::unexpected{parse_err_unknown{}};

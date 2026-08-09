@@ -405,71 +405,17 @@ TEST(parser_tests, complex_nesting) {
   EXPECT_TRUE(std::holds_alternative<tk::op_mul>(else_b.op));
 }
 
-// -- error cases -------------------------------------------------------------
-
-TEST(parser_tests, error_empty_source) {
-  auto r = parse("");
+struct parser_error_theory : ::testing::TestWithParam<std::string> {};
+TEST_P(parser_error_theory, reject) {
+  auto r = parse(GetParam());
   EXPECT_FALSE(r.has_value());
 }
 
-TEST(parser_tests, error_stray_rparen) {
-  auto r = parse(")");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_incomplete_lambda_no_type) {
-  auto r = parse("\\");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_lambda_no_colon) {
-  auto r = parse("\\x int . x");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_lambda_no_dot) {
-  auto r = parse("\\x : int");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_lambda_no_body) {
-  auto r = parse("\\x : int .");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_lambda_bad_type) {
-  auto r = parse("\\x : if . x");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_lambda_missing_id) {
-  auto r = parse("\\int . x");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_unmatched_paren) {
-  auto r = parse("(1 + 2");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_binop_no_rhs) {
-  auto r = parse("1 +");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_type_keyword_in_term_pos) {
-  auto r = parse("int");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_if_missing_then) {
-  auto r = parse("if true 1 else 2");
-  EXPECT_FALSE(r.has_value());
-}
-
-TEST(parser_tests, error_if_missing_else) {
-  auto r = parse("if true then 1 2");
-  EXPECT_FALSE(r.has_value());
-}
+INSTANTIATE_TEST_SUITE_P(general, parser_error_theory, ::testing::Values("", ")", "(1 + 2", "1 +", "int"));
+INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
+                         ::testing::Values("\\", "\\int . x", "\\x int . x", "\\x : int", "\\x : int .",
+                                           "\\x : if . x"));
+INSTANTIATE_TEST_SUITE_P(if_expr, parser_error_theory,
+                         ::testing::Values("if true 1 else 2", "if true then 1 2", "if 42 then 1 else 2"));
 
 }  // namespace tests

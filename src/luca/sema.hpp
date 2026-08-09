@@ -1,9 +1,12 @@
 #pragma once
 
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
+// luca
+#include "parser.hpp"
+
+std::optional<ast::type> type_of(const ast::term& t) noexcept;
 
 class sema {
  public:
