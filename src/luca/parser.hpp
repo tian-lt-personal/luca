@@ -26,7 +26,7 @@ struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arr
 
 struct term;
 struct var {
-  std::optional<int> index;  // de bruijn index
+  int index;  // de bruijn index
 };
 struct abst {
   type param_type;

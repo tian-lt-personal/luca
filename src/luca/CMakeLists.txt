@@ -16,6 +16,7 @@ add_library(luca STATIC
   astdump.cpp
   astdump.hpp
   lexer.cpp
+  machine.cpp
   parser.cpp
   sema.cpp
 )
