@@ -11,7 +11,7 @@ struct eval_context {
   std::pmr::monotonic_buffer_resource mbr;
 };
 
-static value eval(const ast::term& t, std::vector<value>& env, eval_context& arena) {
+static value eval(const ast::term& t, const std::vector<value>& env, eval_context& arena) {
   return std::visit(overloaded{
                         [&](const ast::var& v) -> value { return env[env.size() - 1 - v.index]; },
                         [&](const ast::li_int& l) -> value { return l.value; },
@@ -23,7 +23,7 @@ static value eval(const ast::term& t, std::vector<value>& env, eval_context& are
                         [&](const ast::appl& a) -> value {
                           auto func = eval(*a.func, env, arena);
                           auto arg = eval(*a.arg, env, arena);
-                          auto c = std::get<closure*>(std::move(func));
+                          auto c = std::get<closure*>(func);
                           c->captured_env.push_back(std::move(arg));
                           auto result = eval(*c->abst->body, c->captured_env, arena);
                           c->captured_env.pop_back();
