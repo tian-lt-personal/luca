@@ -42,8 +42,8 @@ INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
                                            test_case{.source = "let", .expected = tk::kw_let{}},
                                            test_case{.source = "in", .expected = tk::kw_in{}},
                                            test_case{.source = "if", .expected = tk::kw_if{}},
-                                       test_case{.source = "then", .expected = tk::kw_then{}},
-                                       test_case{.source = "else", .expected = tk::kw_else{}},
+                                           test_case{.source = "then", .expected = tk::kw_then{}},
+                                           test_case{.source = "else", .expected = tk::kw_else{}},
                                            test_case{.source = "bool", .expected = tk::kw_bool{}},
                                            test_case{.source = "true", .expected = tk::kw_true{}},
                                            test_case{.source = "false", .expected = tk::kw_false{}},
@@ -67,8 +67,8 @@ INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                              test_case{.source = "a__b", .expected = tk::id{.name = "a__b"}},
                              // valid: hyphen placements
                              test_case{.source = "abc-123", .expected = tk::id{.name = "abc-123"}},
-                             test_case{.source = "abc-123-def-", .expected = tk::id{.name = "abc-123-def-"}},
-                             test_case{.source = "a-", .expected = tk::id{.name = "a-"}},
+                             test_case{.source = "abc-123-def", .expected = tk::id{.name = "abc-123-def"}},
+                             test_case{.source = "a-b", .expected = tk::id{.name = "a-b"}},
                              test_case{.source = "x--y", .expected = tk::id{.name = "x--y"}},
                              // valid: mixed hyphens and underscores
                              test_case{.source = "a1-b2_c3", .expected = tk::id{.name = "a1-b2_c3"}},
@@ -146,20 +146,16 @@ INSTANTIATE_TEST_SUITE_P(
         // prevents matching an escape sequence that eats the null-terminator.
         test_case{.source = "\"trailing escape \\", .expected = std::unexpected{lex_err_unknown{}}},
         test_case{.source = "\"trailing escape \\\n", .expected = std::unexpected{lex_err_unknown{}}}));
-INSTANTIATE_TEST_SUITE_P(operator_tokens, lexer_theory,
-                         ::testing::Values(test_case{.source = "+", .expected = tk::op_plus{}},
-                                           test_case{.source = "-", .expected = tk::op_minus{}},
-                                           test_case{.source = "*", .expected = tk::op_mul{}},
-                                           test_case{.source = "/", .expected = tk::op_div{}},
-                                           test_case{.source = "=", .expected = tk::op_eq{}},
-                                           test_case{.source = "!=", .expected = tk::op_ne{}},
-                                           test_case{.source = ">", .expected = tk::op_gt{}},
-                                           test_case{.source = "<", .expected = tk::op_lt{}},
-                                           test_case{.source = ":", .expected = tk::op_colon{}},
-                                           test_case{.source = ".", .expected = tk::op_dot{}},
-                                           test_case{.source = ",", .expected = tk::op_comma{}},
-                                           test_case{.source = "(", .expected = tk::lparen{}},
-                                           test_case{.source = ")", .expected = tk::rparen{}}));
+INSTANTIATE_TEST_SUITE_P(
+    operator_tokens, lexer_theory,
+    ::testing::Values(
+        test_case{.source = "+", .expected = tk::op_plus{}}, test_case{.source = "-", .expected = tk::op_minus{}},
+        test_case{.source = "*", .expected = tk::op_mul{}}, test_case{.source = "/", .expected = tk::op_div{}},
+        test_case{.source = "=", .expected = tk::op_eq{}}, test_case{.source = "!=", .expected = tk::op_ne{}},
+        test_case{.source = ">", .expected = tk::op_gt{}}, test_case{.source = "<", .expected = tk::op_lt{}},
+        test_case{.source = ":", .expected = tk::op_colon{}}, test_case{.source = "->", .expected = tk::op_arrow{}},
+        test_case{.source = ".", .expected = tk::op_dot{}}, test_case{.source = ",", .expected = tk::op_comma{}},
+        test_case{.source = "(", .expected = tk::lparen{}}, test_case{.source = ")", .expected = tk::rparen{}}));
 TEST(lexer_tests, multiple_tokens) {
   std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
   lexer l{source};

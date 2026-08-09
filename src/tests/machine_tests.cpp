@@ -92,7 +92,7 @@ TEST(machine_tests, unary_minus_with_binop) { EXPECT_EQ(std::get<int>(eval_ok("-
 // -- closure rejection at top level ------------------------------------------
 
 TEST(machine_tests, closure_rejected_at_top_level) {
-  auto r = parse("\\x : int . x");
+  auto r = parse("\\f : int . \\x : int . f x");
   EXPECT_THROW(eval(r.first), std::logic_error);
 }
 

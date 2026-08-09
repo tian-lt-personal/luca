@@ -12,8 +12,8 @@ lex_result lexer::next() noexcept {
     re2c:eof                = 0;
 
     id_start     = [a-zA-Z_];
-    id_char      = [a-zA-Z0-9_\-];
-    id           = id_start id_char*;
+    id_char      = [a-zA-Z0-9_];
+    id           = id_start (id_char | "-"+ id_char+)*;
     number       = [0-9]+;
     ws           = [ \t\r\n]+;
     glued_err    = number [a-zA-Z_\-] id_char*;
@@ -36,6 +36,7 @@ lex_result lexer::next() noexcept {
     "!="       { return tk::op_ne{}; }
     ">"        { return tk::op_gt{}; }
     "<"        { return tk::op_lt{}; }
+    "->"       { return tk::op_arrow{}; }
     ","        { return tk::op_comma{}; }
     ":"        { return tk::op_colon{}; }
     "."        { return tk::op_dot{}; }
