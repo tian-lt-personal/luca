@@ -16,14 +16,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            cc: gcc
-            cxx: g++
+            preset: ci-gcc
           - os: ubuntu-latest
-            cc: clang
-            cxx: clang++
+            preset: ci-clang
           - os: windows-latest
-            cc: cl
-            cxx: cl
+            preset: ci-msvc
 
     defaults:
       run:
@@ -32,20 +29,28 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Configure CMake
-      run: >
-        cmake -B b
-        -DCMAKE_C_COMPILER=${{ matrix.cc }}
-        -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
-        -DCMAKE_CXX_STANDARD=23
-        -DCMAKE_CXX_STANDARD_REQUIRED=ON
-        -DBUILD_TESTING=ON
+    - name: Install re2c (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get install -y re2c
+
+    - name: Install re2c (Windows)
+      if: runner.os == 'Windows'
+      run: choco install -y re2c
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgDirectory: ${{ github.workspace }}/vcpkg
+        vcpkgJsonGlob: 'src/vcpkg.json'
+
+    - name: Configure
+      run: cmake --preset ${{ matrix.preset }}
 
     - name: Build
-      run: cmake --build b
+      run: cmake --build --preset ${{ matrix.preset }}
 
     - name: Test
-      run: ctest --test-dir b --output-on-failure
+      run: ctest --preset ${{ matrix.preset }}
 
   coverage:
     runs-on: ubuntu-latest
@@ -58,25 +63,26 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    - name: Install re2c
+      run: sudo apt-get install -y re2c
+
     - name: Install gcovr
       run: pip install gcovr
 
-    - name: Configure CMake
-      run: >
-        cmake -B b
-        -DCMAKE_C_COMPILER=gcc
-        -DCMAKE_CXX_COMPILER=g++
-        -DCMAKE_CXX_STANDARD=23
-        -DCMAKE_CXX_STANDARD_REQUIRED=ON
-        -DBUILD_TESTING=ON
-        -DCMAKE_BUILD_TYPE=Debug
-        -DCMAKE_CXX_FLAGS="--coverage"
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgDirectory: ${{ github.workspace }}/vcpkg
+        vcpkgJsonGlob: 'src/vcpkg.json'
+
+    - name: Configure
+      run: cmake --preset ci-coverage
 
     - name: Build
-      run: cmake --build b
+      run: cmake --build --preset ci-coverage
 
     - name: Test
-      run: ctest --test-dir b --output-on-failure
+      run: ctest --preset ci-coverage
 
     - name: Generate coverage report
       run: |
@@ -86,7 +92,7 @@ jobs:
           --html-details coverage/index.html \
           --xml coverage/coverage.xml \
           --print-summary \
-          b
+          b_/ci-coverage
 
     - name: Post coverage summary
       if: always()
@@ -96,7 +102,7 @@ jobs:
         gcovr --root . \
           --filter 'luca/' \
           --print-summary \
-          b 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          b_/ci-coverage 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v6

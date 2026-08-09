@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 20,
@@ -20,18 +20,106 @@
     {
       "name": "vsdbg",
       "inherits": "base",
-      "description": "Visual Studio Debug",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
+    },
+    {
+      "name": "ci-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "ci-gcc",
+      "inherits": "ci-base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "ci-clang",
+      "inherits": "ci-base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "ci-msvc",
+      "inherits": "ci-base",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64"
+    },
+    {
+      "name": "ci-coverage",
+      "inherits": "ci-base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "--coverage"
+      }
     }
   ],
   "buildPresets": [
     {
-      "name":"vsdbg",
+      "name": "vsdbg",
       "configurePreset": "vsdbg"
+    },
+    {
+      "name": "ci-gcc",
+      "configurePreset": "ci-gcc"
+    },
+    {
+      "name": "ci-clang",
+      "configurePreset": "ci-clang"
+    },
+    {
+      "name": "ci-msvc",
+      "configurePreset": "ci-msvc"
+    },
+    {
+      "name": "ci-coverage",
+      "configurePreset": "ci-coverage"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ci-gcc",
+      "configurePreset": "ci-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-clang",
+      "configurePreset": "ci-clang",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-msvc",
+      "configurePreset": "ci-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-coverage",
+      "configurePreset": "ci-coverage",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
