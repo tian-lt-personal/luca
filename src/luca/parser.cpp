@@ -18,14 +18,18 @@ constexpr bool is_start_of_expr(const token& tk) noexcept {
   return holds_one_of<tk::id, tk::li_int, tk::kw_lambda, tk::kw_if, tk::kw_true, tk::kw_false, tk::lparen>(tk);
 }
 
-constexpr int prec_unary_minus = 30;
-constexpr int prec_appl = 40;
+constexpr int prec_unary_minus = 40;
+constexpr int prec_appl = 50;
 std::optional<int> infix_precedence(const token& tok) noexcept {
   return std::visit(overloaded{
-                        [](const tk::op_plus&) -> std::optional<int> { return 10; },
-                        [](const tk::op_minus&) -> std::optional<int> { return 10; },
-                        [](const tk::op_mul&) -> std::optional<int> { return 20; },
-                        [](const tk::op_div&) -> std::optional<int> { return 20; },
+                        [](const tk::op_eq&) -> std::optional<int> { return 10; },
+                        [](const tk::op_ne&) -> std::optional<int> { return 10; },
+                        [](const tk::op_gt&) -> std::optional<int> { return 10; },
+                        [](const tk::op_lt&) -> std::optional<int> { return 10; },
+                        [](const tk::op_plus&) -> std::optional<int> { return 20; },
+                        [](const tk::op_minus&) -> std::optional<int> { return 20; },
+                        [](const tk::op_mul&) -> std::optional<int> { return 30; },
+                        [](const tk::op_div&) -> std::optional<int> { return 30; },
                         [](const auto&) -> std::optional<int> { return std::nullopt; },
                     },
                     tok);

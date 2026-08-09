@@ -48,10 +48,12 @@ std::optional<ast::type> sema::type_of(const ast::term& t) noexcept {
     [this](const ast::binop& b) -> std::optional<ast::type> {
       auto lty = type_of(*b.left);
       auto rty = type_of(*b.right);
-      if (lty.has_value() && rty.has_value() && std::holds_alternative<ast::type_int>(*lty) &&
-          std::holds_alternative<ast::type_int>(*rty))
-        return ast::type{ast::type_int{}};
-      return std::nullopt;
+      if (!lty.has_value() || !rty.has_value()) return std::nullopt;
+      if (!std::holds_alternative<ast::type_int>(*lty) || !std::holds_alternative<ast::type_int>(*rty))
+        return std::nullopt;
+      bool is_cmp = std::holds_alternative<tk::op_eq>(b.op) || std::holds_alternative<tk::op_ne>(b.op) ||
+                    std::holds_alternative<tk::op_gt>(b.op) || std::holds_alternative<tk::op_lt>(b.op);
+      return is_cmp ? ast::type{ast::type_bool{}} : ast::type{ast::type_int{}};
     },
     [this](const ast::ifexpr& ie) -> std::optional<ast::type> {
       auto then_ty = type_of(*ie.then);

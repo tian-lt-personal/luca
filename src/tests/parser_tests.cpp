@@ -137,6 +137,51 @@ TEST(parser_tests, mixed_precedence_chain) {
   EXPECT_EQ(as<ast::li_int>(*div.right).value, 5);
 }
 
+// -- comparison ops -----------------------------------------------------------
+
+TEST(parser_tests, comparison_eq) {
+  auto r = parse_ok("1 = 2");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_eq>(b.op));
+  EXPECT_EQ(as<ast::li_int>(*b.left).value, 1);
+  EXPECT_EQ(as<ast::li_int>(*b.right).value, 2);
+}
+
+TEST(parser_tests, comparison_ne) {
+  auto r = parse_ok("3 != 4");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_ne>(b.op));
+}
+
+TEST(parser_tests, comparison_gt) {
+  auto r = parse_ok("5 > 3");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_gt>(b.op));
+}
+
+TEST(parser_tests, comparison_lt) {
+  auto r = parse_ok("1 < 2");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(b.op));
+}
+
+TEST(parser_tests, comparison_prec_over_arithmetic) {
+  auto r = parse_ok("1 + 2 < 3 * 4");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(b.op));
+  const auto& lhs = as<ast::binop>(*b.left);
+  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(lhs.op));
+  const auto& rhs = as<ast::binop>(*b.right);
+  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(rhs.op));
+}
+
+TEST(parser_tests, comparison_as_if_cond) {
+  auto r = parse_ok("if 1 < 2 then 3 else 4");
+  const auto& ie = as<ast::ifexpr>(r.first);
+  const auto& cmp = as<ast::binop>(*ie.cond);
+  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(cmp.op));
+}
+
 // -- unary minus -------------------------------------------------------------
 
 TEST(parser_tests, unary_minus_integer) {
@@ -406,7 +451,7 @@ struct parser_error_theory : ::testing::TestWithParam<std::string> {};
 TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam()), parse_err); }
 
 INSTANTIATE_TEST_SUITE_P(general, parser_error_theory,
-                         ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true"));
+                         ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true", "true = 1"));
 INSTANTIATE_TEST_SUITE_P(lambda, parser_error_theory,
                          ::testing::Values("\\", "\\int . x", "\\x int . x", "\\x : int", "\\x : int .",
                                            "\\x : if . x"));
