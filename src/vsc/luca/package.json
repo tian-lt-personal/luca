@@ -1,0 +1,39 @@
+{
+  "name": "luca",
+  "displayName": "LUCA-VSC-LANG-EXT",
+  "description": "LUCA Language Support for Visual Studio Code",
+  "version": "0.0.1",
+  "publisher": "tian",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tian-lt-personal/luca"
+  },
+  "engines": {
+    "vscode": "^1.125.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "luca",
+        "aliases": [
+          "luca",
+          "luca"
+        ],
+        "extensions": [
+          ".luca"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "luca",
+        "scopeName": "source.luca",
+        "path": "./syntaxes/luca.tmLanguage.json"
+      }
+    ]
+  }
+}
