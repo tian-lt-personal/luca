@@ -16,6 +16,7 @@ lex_result lexer::next() noexcept {
     id           = id_start (id_char | "-"+ id_char+)*;
     number       = [0-9]+;
     ws           = [ \t\r\n]+;
+    comment      = "//" [^\n\x00]*;
     glued_err    = number [a-zA-Z_\-] id_char*;
 
     str_char     = [^"\\\n\x00];
@@ -65,6 +66,7 @@ lex_result lexer::next() noexcept {
     str_err    { return std::unexpected{lex_err_unknown{}}; }
     glued_err  { return std::unexpected{lex_err_unknown{}}; }
     ws         { continue; }
+    comment    { continue; }
   */
   }
 }
