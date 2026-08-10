@@ -1,3 +1,4 @@
+// factorial example
 (\Y : int .
   \fact : int .
   Y fact 10

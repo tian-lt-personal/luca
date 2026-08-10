@@ -4,6 +4,9 @@
   "scopeName": "source.luca",
   "patterns": [
     {
+      "include": "#comments"
+    },
+    {
       "include": "#strings"
     },
     {
@@ -26,6 +29,10 @@
     }
   ],
   "repository": {
+    "comments": {
+      "name": "comment.line.double-slash.luca",
+      "match": "//.*$"
+    },
     "strings": {
       "name": "string.quoted.double.luca",
       "begin": "\"",

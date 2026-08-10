@@ -156,6 +156,12 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = ":", .expected = tk::op_colon{}}, test_case{.source = "->", .expected = tk::op_arrow{}},
         test_case{.source = ".", .expected = tk::op_dot{}}, test_case{.source = ",", .expected = tk::op_comma{}},
         test_case{.source = "(", .expected = tk::lparen{}}, test_case{.source = ")", .expected = tk::rparen{}}));
+INSTANTIATE_TEST_SUITE_P(
+    comment_tokens, lexer_theory,
+    ::testing::Values(test_case{.source = "// this is a comment", .expected = std::unexpected{lex_err_eof{}}},
+                      test_case{.source = "42 // the answer", .expected = tk::li_int{.value = "42"}},
+                      test_case{.source = "//", .expected = std::unexpected{lex_err_eof{}}},
+                      test_case{.source = "   // indented comment", .expected = std::unexpected{lex_err_eof{}}}));
 TEST(lexer_tests, multiple_tokens) {
   std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
   lexer l{source};
@@ -169,6 +175,19 @@ TEST(lexer_tests, multiple_tokens) {
   }
   auto actual = l.next();
   EXPECT_EQ(actual, lex_result{std::unexpected{lex_err_eof{}}});
+}
+TEST(lexer_tests, comment_skips_to_newline) {
+  std::string source = "// first line comment\n42 // inline comment\nlet\n";
+  lexer l{source};
+  lex_result expected_seq[] = {
+      tk::li_int{.value = "42"},
+      tk::kw_let{},
+      std::unexpected{lex_err_eof{}},
+  };
+  for (size_t i = 0; i < std::size(expected_seq); ++i) {
+    auto actual = l.next();
+    EXPECT_EQ(actual, expected_seq[i]) << "mismatch at " << i;
+  }
 }
 
 }  // namespace tests

@@ -31,6 +31,18 @@ max (inc 5) (add 3 4)
 
 No dependencies — the extension works in any VS Code `^1.125.0` or newer.
 
+
+## Packaging and installation
+
+```
+vsce package
+```
+
+```
+code --install-extension luca-0.0.1.vsix
+```
+
+
 ## Release Notes
 
 See [CHANGELOG.md](./CHANGELOG.md).
