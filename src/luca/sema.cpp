@@ -56,8 +56,15 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
           [&](const ast::ifexpr& ie) -> std::optional<ast::type> {
             auto then_ty = type_of_impl(*ie.then, param_types, binding_types, ctx);
             auto else_ty = type_of_impl(*ie.els, param_types, binding_types, ctx);
-            if (then_ty.has_value() && else_ty.has_value() && then_ty->index() == else_ty->index()) return then_ty;
+            if (then_ty.has_value() && else_ty.has_value() && same_type(*then_ty, *else_ty)) return then_ty;
             return std::nullopt;
+          },
+          [&](const ast::fix& fx) -> std::optional<ast::type> {
+            auto body_ty = type_of_impl(*fx.body, param_types, binding_types, ctx);
+            if (!body_ty.has_value()) return std::nullopt;
+            auto* arrow = std::get_if<ast::type_arrow>(&*body_ty);
+            if (!arrow || !same_type(*arrow->from, *arrow->to)) return std::nullopt;
+            return ast::type{*arrow->from};
           },
           [](const auto&) -> std::optional<ast::type> { return std::nullopt; },
       },
@@ -65,6 +72,13 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
 }
 
 }  // namespace
+
+bool same_type(const ast::type& a, const ast::type& b) noexcept {
+  if (a.index() != b.index()) return false;
+  if (const auto *la = std::get_if<ast::type_arrow>(&a), *ra = std::get_if<ast::type_arrow>(&b); la && ra)
+    return same_type(*la->from, *ra->from) && same_type(*la->to, *ra->to);
+  return true;
+}
 
 std::optional<int> sema::resolve_binding_index(std::string_view name) const {
   for (size_t i = 0; i < bindings_.size(); ++i) {

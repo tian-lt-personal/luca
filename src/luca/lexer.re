@@ -54,6 +54,7 @@ lex_result lexer::next() noexcept {
     "false"     { return tk::kw_false{}; }
     "int"       { return tk::kw_int{}; }
     "string"    { return tk::kw_string{}; }
+    "fix"       { return tk::kw_fix{}; }
 
     id         { return tk::id{.name = lexeme()}; }
     number     { return tk::li_int{.value = lexeme()}; }

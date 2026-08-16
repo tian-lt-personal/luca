@@ -24,10 +24,10 @@ static value eval(const ast::term& t, const std::vector<value>& env, eval_contex
                           auto func = eval(*a.func, env, arena);
                           auto arg = eval(*a.arg, env, arena);
                           auto c = std::get<closure*>(func);
-                          c->captured_env.push_back(std::move(arg));
-                          auto result = eval(*c->abst->body, c->captured_env, arena);
-                          c->captured_env.pop_back();
-                          return result;
+                          // fresh env per call, so recursive self-applications don't see the parent's argument
+                          auto call_env = c->captured_env;
+                          call_env.push_back(std::move(arg));
+                          return eval(*c->abst->body, call_env, arena);
                         },
                         [&](const ast::binop& b) -> value {
                           int lv = std::get<int>(eval(*b.left, env, arena));
@@ -48,6 +48,15 @@ static value eval(const ast::term& t, const std::vector<value>& env, eval_contex
                         [&](const ast::ifexpr& ie) -> value {
                           bool cv = std::get<bool>(eval(*ie.cond, env, arena));
                           return eval(cv ? *ie.then : *ie.els, env, arena);
+                        },
+                        [&](const ast::fix& fx) -> value {
+                          auto c = std::get<closure*>(eval(*fx.body, env, arena));
+                          // absorb the first binder; rec occupies f's env slot so f resolves to itself
+                          auto& body_abst = std::get<ast::abst>(*c->abst->body);
+                          auto* rec = std::pmr::polymorphic_allocator<closure>{&arena.mbr}.new_object<closure>(
+                              &body_abst, c->captured_env);
+                          rec->captured_env.push_back(rec);
+                          return rec;
                         },
                     },
                     t);

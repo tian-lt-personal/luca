@@ -43,6 +43,9 @@ struct kw_int {
 struct kw_string {
   friend std::strong_ordering operator<=>(kw_string, kw_string) = default;
 };
+struct kw_fix {
+  friend std::strong_ordering operator<=>(kw_fix, kw_fix) = default;
+};
 struct li_int {
   std::string_view value;
   friend std::strong_ordering operator<=>(li_int, li_int) = default;
@@ -96,8 +99,8 @@ struct rparen {
 
 }  // namespace tk
 
-using token = std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true,
-                           tk::kw_false,
-                           tk::kw_bool, tk::kw_int, tk::kw_string, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus,
-                           tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_arrow,
-                           tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;
+using token =
+    std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true,
+                 tk::kw_false, tk::kw_bool, tk::kw_int, tk::kw_string, tk::kw_fix, tk::li_int, tk::li_str, tk::op_plus,
+                 tk::op_minus, tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_arrow,
+                 tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen>;
