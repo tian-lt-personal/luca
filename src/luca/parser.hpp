@@ -52,7 +52,10 @@ struct ifexpr {
   term* then;
   term* els;
 };
-struct term : std::variant<var, abst, appl, binop, ifexpr, li_int, li_bool> {};
+struct fix {
+  term* body;
+};
+struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool> {};
 
 struct context {
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;

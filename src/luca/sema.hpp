@@ -6,6 +6,8 @@
 // luca
 #include "parser.hpp"
 
+bool same_type(const ast::type& a, const ast::type& b) noexcept;
+
 class sema {
  public:
   explicit sema(ast::context& ctx) noexcept : ctx_{&ctx} {}

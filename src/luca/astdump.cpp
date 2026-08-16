@@ -11,6 +11,7 @@ void to_json(nlohmann::json& j, const ast::abst& a);
 void to_json(nlohmann::json& j, const ast::appl& a);
 void to_json(nlohmann::json& j, const ast::binop& b);
 void to_json(nlohmann::json& j, const ast::ifexpr& i);
+void to_json(nlohmann::json& j, const ast::fix& f);
 
 void to_json(nlohmann::json& j, const ast::type_unit&) { j["unit"] = nlohmann::json::object(); }
 void to_json(nlohmann::json& j, const ast::type_int&) { j["int"] = nlohmann::json::object(); }
@@ -58,6 +59,10 @@ void to_json(nlohmann::json& j, const ast::ifexpr& i) {
   to_json(j["ifexpr"]["cond"], *i.cond);
   to_json(j["ifexpr"]["then"], *i.then);
   to_json(j["ifexpr"]["else"], *i.els);
+}
+void to_json(nlohmann::json& j, const ast::fix& f) {
+  j["fix"] = nlohmann::json::object();
+  to_json(j["fix"]["body"], *f.body);
 }
 
 nlohmann::json dump(const ast::term& term) {

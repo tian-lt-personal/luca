@@ -273,8 +273,10 @@ TEST(parser_tests, double_unary_minus) {
 // -- implicit application ----------------------------------------------------
 
 TEST(parser_tests, application_single) {
-  auto r = parse_ok("\\f : int . \\x : int . f x");
-  const auto& outer = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\f : int -> int . \\x : int . f x) (\\y : int . y) 5");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& outer = as<ast::abst>(*id_app.func);
   const auto& inner = as<ast::abst>(*outer.body);
   const auto& a = as<ast::appl>(*inner.body);
   EXPECT_EQ(as<ast::var>(*a.func).index, 1);  // f: two binders out
@@ -282,8 +284,11 @@ TEST(parser_tests, application_single) {
 }
 
 TEST(parser_tests, application_left_associative) {
-  auto r = parse_ok("\\f : int . \\x : int . \\y : int . f x y");
-  const auto& a0 = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\f : int -> int -> int . \\x : int . \\y : int . f x y) (\\a : int . \\b : int . a) 1 2");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& ab_app = as<ast::appl>(*id_app.func);
+  const auto& a0 = as<ast::abst>(*ab_app.func);
   const auto& a1 = as<ast::abst>(*a0.body);
   const auto& a2 = as<ast::abst>(*a1.body);
   const auto& outer = as<ast::appl>(*a2.body);
@@ -294,38 +299,42 @@ TEST(parser_tests, application_left_associative) {
 }
 
 TEST(parser_tests, application_with_literal) {
-  auto r = parse_ok("\\f : int . f 42");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& a = as<ast::appl>(*ab.body);
-  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
-  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 42);
+  auto r = parse_ok("(\\f : int -> int . f 42) (\\y : int . y)");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  const auto& inner = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
+  EXPECT_EQ(as<ast::li_int>(*inner.arg).value, 42);
 }
 
 TEST(parser_tests, application_prec_over_binop) {
-  auto r = parse_ok("\\f : int . f 1 + 2");
-  const auto& ab = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\f : int -> int . f 1 + 2) (\\y : int . y)");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
   const auto& b = as<ast::binop>(*ab.body);
   EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
-  const auto& a = as<ast::appl>(*b.left);
-  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
-  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 1);
+  const auto& inner = as<ast::appl>(*b.left);
+  EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
+  EXPECT_EQ(as<ast::li_int>(*inner.arg).value, 1);
   EXPECT_EQ(as<ast::li_int>(*b.right).value, 2);
 }
 
 TEST(parser_tests, application_boolean_arg) {
-  auto r = parse_ok("\\f : int . f true");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& a = as<ast::appl>(*ab.body);
-  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
-  EXPECT_EQ(as<ast::li_bool>(*a.arg).value, true);
+  auto r = parse_ok("(\\f : bool -> int . f true) (\\y : bool . 1)");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  const auto& inner = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
+  EXPECT_EQ(as<ast::li_bool>(*inner.arg).value, true);
 }
 
 TEST(parser_tests, application_if_arg) {
-  auto r = parse_ok("\\f : int . f if true then 1 else 2");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& a = as<ast::appl>(*ab.body);
-  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
-  EXPECT_TRUE(is<ast::ifexpr>(*a.arg));
+  auto r = parse_ok("(\\f : int -> int . f if true then 1 else 2) (\\y : int . y)");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  const auto& inner = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
+  EXPECT_TRUE(is<ast::ifexpr>(*inner.arg));
 }
 
 // -- parenthesized expressions -----------------------------------------------
@@ -347,8 +356,11 @@ TEST(parser_tests, parens_override_precedence) {
 }
 
 TEST(parser_tests, parens_application_rhs) {
-  auto r = parse_ok("\\f : int . \\x : int . \\y : int . (f x) y");
-  const auto& a0 = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\f : int -> int -> int . \\x : int . \\y : int . (f x) y) (\\a : int . \\b : int . a) 1 2");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& ab_app = as<ast::appl>(*id_app.func);
+  const auto& a0 = as<ast::abst>(*ab_app.func);
   const auto& a1 = as<ast::abst>(*a0.body);
   const auto& a2 = as<ast::abst>(*a1.body);
   const auto& a = as<ast::appl>(*a2.body);
@@ -400,8 +412,10 @@ TEST(parser_tests, lambda_keyword_syntax) {
 }
 
 TEST(parser_tests, lambda_body_extends_right) {
-  auto r = parse_ok("\\x : int . \\y : int . x y");
-  const auto& outer = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\x : int -> int . \\y : int . x y) (\\a : int . a) 5");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& outer = as<ast::abst>(*id_app.func);
   const auto& inner = as<ast::abst>(*outer.body);
   const auto& a = as<ast::appl>(*inner.body);
   EXPECT_EQ(as<ast::var>(*a.func).index, 1);  // x: one binder out
@@ -409,8 +423,11 @@ TEST(parser_tests, lambda_body_extends_right) {
 }
 
 TEST(parser_tests, lambda_body_multi_app) {
-  auto r = parse_ok("\\x : int . \\y : int . \\z : int . x y z");
-  const auto& a0 = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\x : int -> int -> int . \\y : int . \\z : int . x y z) (\\a : int . \\b : int . a) 1 2");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& ab_app = as<ast::appl>(*id_app.func);
+  const auto& a0 = as<ast::abst>(*ab_app.func);
   const auto& a1 = as<ast::abst>(*a0.body);
   const auto& a2 = as<ast::abst>(*a1.body);
   const auto& outer = as<ast::appl>(*a2.body);
@@ -421,11 +438,12 @@ TEST(parser_tests, lambda_body_multi_app) {
 }
 
 TEST(parser_tests, lambda_application_left) {
-  auto r = parse_ok("\\x : int . x 5");
-  const auto& ab = as<ast::abst>(r.first);
-  const auto& a = as<ast::appl>(*ab.body);
-  EXPECT_EQ(as<ast::var>(*a.func).index, 0);
-  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 5);
+  auto r = parse_ok("(\\x : int -> int . x 5) (\\a : int . a)");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  const auto& inner = as<ast::appl>(*ab.body);
+  EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
+  EXPECT_EQ(as<ast::li_int>(*inner.arg).value, 5);
 }
 
 TEST(parser_tests, lambda_de_bruijn_single) {
@@ -436,13 +454,15 @@ TEST(parser_tests, lambda_de_bruijn_single) {
 }
 
 TEST(parser_tests, lambda_de_bruijn_nested) {
-  auto r = parse_ok("\\x : int . \\y : bool . x y");
-  const auto& outer = as<ast::abst>(r.first);
+  auto r = parse_ok("(\\x : bool -> int . \\y : bool . x y) (\\a : bool . 1) true");
+  const auto& app = as<ast::appl>(r.first);
+  const auto& id_app = as<ast::appl>(*app.func);
+  const auto& outer = as<ast::abst>(*id_app.func);
   const auto& inner = as<ast::abst>(*outer.body);
   // in the inner body: x y
-  const auto& app = as<ast::appl>(*inner.body);
-  EXPECT_EQ(as<ast::var>(*app.func).index, 1);  // x: one binder out
-  EXPECT_EQ(as<ast::var>(*app.arg).index, 0);   // y: innermost binder
+  const auto& appl = as<ast::appl>(*inner.body);
+  EXPECT_EQ(as<ast::var>(*appl.func).index, 1);  // x: one binder out
+  EXPECT_EQ(as<ast::var>(*appl.arg).index, 0);   // y: innermost binder
 }
 
 TEST(parser_tests, lambda_de_bruijn_shadow) {
@@ -493,7 +513,7 @@ TEST(parser_tests, lambda_applied_directly) {
 }
 
 TEST(parser_tests, lambda_in_if) {
-  auto r = parse_ok("(if true then \\x : int . x else \\x : bool . false) 1");
+  auto r = parse_ok("(if true then \\x : int . x else \\x : int . 0) 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& ie = as<ast::ifexpr>(*a.func);
   EXPECT_TRUE(is<ast::abst>(*ie.then));
@@ -508,8 +528,14 @@ TEST(parser_tests, if_in_lambda_body) {
 }
 
 TEST(parser_tests, complex_nesting) {
-  auto r = parse_ok("\\x : int . \\f : int . \\g : int . \\y : int . if x = 0 then f x + 1 else g y * 2");
-  const auto& a0 = as<ast::abst>(r.first);
+  auto r = parse_ok(
+      "(\\x : int . \\f : int -> int . \\g : int -> int . \\y : int . if x = 0 then f x + 1 else g y * 2) 1 "
+      "(\\a : int . a) (\\a : int . a) 5");
+  const auto& app1 = as<ast::appl>(r.first);
+  const auto& app2 = as<ast::appl>(*app1.func);
+  const auto& app3 = as<ast::appl>(*app2.func);
+  const auto& app4 = as<ast::appl>(*app3.func);
+  const auto& a0 = as<ast::abst>(*app4.func);
   const auto& a1 = as<ast::abst>(*a0.body);
   const auto& a2 = as<ast::abst>(*a1.body);
   const auto& a3 = as<ast::abst>(*a2.body);
@@ -519,6 +545,39 @@ TEST(parser_tests, complex_nesting) {
   EXPECT_TRUE(std::holds_alternative<tk::op_plus>(then_b.op));
   const auto& else_b = as<ast::binop>(*ie.els);
   EXPECT_TRUE(std::holds_alternative<tk::op_mul>(else_b.op));
+}
+
+// -- fix ----------------------------------------------------------------------
+
+TEST(parser_tests, fix_simple) {
+  auto r = parse_ok("(fix (\\f : int -> int . \\n : int . n + 1)) 5");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& fx = as<ast::fix>(*a.func);
+  const auto& ab = as<ast::abst>(*fx.body);
+  EXPECT_TRUE(std::holds_alternative<ast::type_arrow>(ab.param_type));
+  EXPECT_TRUE(is<ast::abst>(*ab.body));
+}
+
+TEST(parser_tests, fix_application_argument) {
+  // the applied argument binds the generator's second lambda parameter
+  auto r = parse_ok("(fix (\\f : int -> int . \\n : int . f n)) 5");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 5);
+}
+
+TEST(parser_tests, fix_in_let) {
+  auto r = parse_ok("let fact = fix (\\f : int -> int . \\n : int . n * f (n - 1)) in fact 5");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_TRUE(is<ast::fix>(*a.arg));
+}
+
+TEST(parser_tests, strict_app_known_wrong) {
+  // known non-arrow in function position must be rejected
+  EXPECT_THROW(parse("(\\f : int . f 5) 1"), parse_err);
+  // known argument/parameter mismatch must be rejected
+  EXPECT_THROW(parse("(\\f : int -> int . f true) 1"), parse_err);
+  // well-typed arrow application is accepted
+  parse_ok("(\\f : int -> int . f 5) (\\x : int . x + 1)");
 }
 
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};
@@ -536,5 +595,10 @@ INSTANTIATE_TEST_SUITE_P(if_expr, parser_error_theory,
 
 INSTANTIATE_TEST_SUITE_P(let_expr, parser_error_theory,
                          ::testing::Values("let x = f y in x", "let 1 = 2 in 3", "let x = 1 2"));
+
+INSTANTIATE_TEST_SUITE_P(fix, parser_error_theory,
+                         ::testing::Values("fix 42", "fix (\\f : int . f)", "fix (\\f : int -> int . f)",
+                                           "fix (\\f : int -> int . \\x : bool . 1)",
+                                           "fix (\\f : int -> int . \\n : int . n + 1)"));
 
 }  // namespace tests

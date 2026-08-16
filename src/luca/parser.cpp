@@ -82,6 +82,10 @@ class parser {
       }
       if (is_start_of_expr(peek()) && prec_appl > precedence) {
         auto rhs = parse_expr(prec_appl);
+        if (auto fty = sema_.type_of(left), aty = sema_.type_of(rhs); fty.has_value()) {
+          auto* arrow = std::get_if<ast::type_arrow>(&*fty);
+          if (!arrow || (aty.has_value() && !same_type(*arrow->from, *aty))) throw parse_err_unknown{};
+        }
         left = ast::term{ast::appl{.func = make_term(actx_, std::move(left)), .arg = make_term(actx_, std::move(rhs))}};
         continue;
       }
@@ -95,6 +99,7 @@ class parser {
                           [this](tk::kw_lambda) { return parse_lambda(); },
                           [this](tk::kw_let) { return parse_let(); },
                           [this](tk::kw_if) { return parse_if(); },
+                          [this](tk::kw_fix) { return parse_fix(); },
                           [this](tk::lparen) -> ast::term {
                             advance();
                             auto inner = parse_expr(0);
@@ -193,7 +198,7 @@ class parser {
     expect<tk::kw_else>();
     auto else_expr = parse_expr(0);
     if (auto then_ty = sema_.type_of(then_expr), else_ty = sema_.type_of(else_expr);
-        then_ty.has_value() && else_ty.has_value() && then_ty->index() != else_ty->index())
+        then_ty.has_value() && else_ty.has_value() && !same_type(*then_ty, *else_ty))
       throw parse_err_unknown{};
     return ast::term{ast::ifexpr{.cond = make_term(actx_, std::move(cond)),
                                  .then = make_term(actx_, std::move(then_expr)),
@@ -222,6 +227,17 @@ class parser {
         .func = make_term(
             actx_, ast::term{ast::abst{.param_type = *std::move(bound_ty), .body = make_term(actx_, std::move(body))}}),
         .arg = make_term(actx_, std::move(bound_expr))}};
+  }
+  ast::term parse_fix() {
+    advance();
+    auto operand = parse_expr(prec_appl);
+    auto* op_abst = std::get_if<ast::abst>(&operand);
+    if (!op_abst || !std::get_if<ast::abst>(op_abst->body)) throw parse_err_unknown{};
+    if (auto ty = sema_.type_of(operand); ty.has_value()) {
+      auto* arrow = std::get_if<ast::type_arrow>(&*ty);
+      if (!arrow || !same_type(*arrow->from, *arrow->to)) throw parse_err_unknown{};
+    }
+    return ast::term{ast::fix{.body = make_term(actx_, std::move(operand))}};
   }
   ast::term parse_infix(ast::term left, token op) {
     int prec = *infix_precedence(op);

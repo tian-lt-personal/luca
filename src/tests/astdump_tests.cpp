@@ -79,26 +79,28 @@ TEST(astdump_tests, unary_minus) {
 }
 
 TEST(astdump_tests, application_single) {
-  auto r = parse_ok("\\f : int . \\x : int . f x");
+  auto r = parse_ok("(\\f : int -> int . \\x : int . f x) (\\y : int . y) 5");
   auto j = dump(r.first);
-  const auto& inner_abst = j["abst"]["body"];
+  const auto& outer_abst = j["appl"]["func"]["appl"]["func"]["abst"];
+  const auto& inner_abst = outer_abst["body"];
   const auto& body = inner_abst["abst"]["body"];
   EXPECT_EQ(body["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":1}})"));
   EXPECT_EQ(body["appl"]["arg"], nlohmann::json::parse(R"({"var":{"index":0}})"));
 }
 TEST(astdump_tests, application_left_assoc) {
-  auto r = parse_ok("\\f : int . \\x : int . \\y : int . f x y");
+  auto r = parse_ok("(\\f : int -> int -> int . \\x : int . \\y : int . f x y) (\\a : int . \\b : int . a) 1 2");
   auto j = dump(r.first);
-  const auto& a1 = j["abst"]["body"];
+  const auto& a0 = j["appl"]["func"]["appl"]["func"]["appl"]["func"]["abst"];
+  const auto& a1 = a0["body"];
   const auto& a2 = a1["abst"]["body"];
   const auto& body = a2["abst"]["body"];
   EXPECT_TRUE(body["appl"]["func"]["appl"].is_object());
   EXPECT_TRUE(body["appl"]["arg"]["var"].is_object());
 }
 TEST(astdump_tests, application_with_literal) {
-  auto r = parse_ok("\\f : int . f 42");
+  auto r = parse_ok("(\\f : int -> int . f 42) (\\y : int . y)");
   auto j = dump(r.first);
-  const auto& body = j["abst"]["body"];
+  const auto& body = j["appl"]["func"]["abst"]["body"];
   EXPECT_EQ(body["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":0}})"));
   EXPECT_EQ(body["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":42}})"));
 }
@@ -123,10 +125,11 @@ TEST(astdump_tests, lambda_unit) {
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"], nlohmann::json::parse(R"({"unit":{}})"));
 }
 TEST(astdump_tests, lambda_nested) {
-  auto r = parse_ok("\\x : int . \\y : bool . x y");
+  auto r = parse_ok("(\\x : bool -> int . \\y : bool . x y) (\\a : bool . 1) true");
   auto j = dump(r.first);
-  EXPECT_EQ(j["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
-  const auto& inner = j["abst"]["body"];
+  const auto& outer = j["appl"]["func"]["appl"]["func"]["abst"];
+  EXPECT_EQ(outer["param_type"], nlohmann::json::parse(R"({"arrow":{"from":{"bool":{}},"to":{"int":{}}}})"));
+  const auto& inner = outer["body"];
   EXPECT_EQ(inner["abst"]["param_type"], nlohmann::json::parse(R"({"bool":{}})"));
   EXPECT_EQ(inner["abst"]["body"]["appl"]["func"], nlohmann::json::parse(R"({"var":{"index":1}})"));
   EXPECT_EQ(inner["abst"]["body"]["appl"]["arg"], nlohmann::json::parse(R"({"var":{"index":0}})"));
@@ -164,11 +167,11 @@ TEST(astdump_tests, lambda_applied) {
   EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":42}})"));
 }
 TEST(astdump_tests, lambda_in_if) {
-  auto r = parse_ok("(if true then \\x : int . x else \\x : bool . false) 1");
+  auto r = parse_ok("(if true then \\x : int . x else \\x : int . 0) 1");
   auto j = dump(r.first);
   const auto& ie = j["appl"]["func"]["ifexpr"];
   EXPECT_EQ(ie["then"]["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
-  EXPECT_EQ(ie["else"]["abst"]["param_type"], nlohmann::json::parse(R"({"bool":{}})"));
+  EXPECT_EQ(ie["else"]["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
 }
 TEST(astdump_tests, if_in_lambda) {
   auto r = parse_ok("(\\x : int . if x = 0 then 1 else 0) 1");
@@ -178,10 +181,13 @@ TEST(astdump_tests, if_in_lambda) {
   EXPECT_TRUE(ab["body"]["ifexpr"]["cond"]["binop"].is_object());
 }
 TEST(astdump_tests, complex_nesting) {
-  auto r = parse_ok("\\x : int . \\f : int . \\g : int . \\y : int . if x = 0 then f x + 1 else g y * 2");
+  auto r = parse_ok(
+      "(\\x : int . \\f : int -> int . \\g : int -> int . \\y : int . if x = 0 then f x + 1 else g y * 2) 1 "
+      "(\\a : int . a) (\\a : int . a) 5");
   auto j = dump(r.first);
-  EXPECT_EQ(j["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
-  const auto& a1 = j["abst"]["body"];
+  const auto& a0 = j["appl"]["func"]["appl"]["func"]["appl"]["func"]["appl"]["func"]["abst"];
+  EXPECT_EQ(a0["param_type"], nlohmann::json::parse(R"({"int":{}})"));
+  const auto& a1 = a0["body"];
   const auto& a2 = a1["abst"]["body"];
   const auto& a3 = a2["abst"]["body"];
   const auto& ie = a3["abst"]["body"]["ifexpr"];
@@ -190,10 +196,11 @@ TEST(astdump_tests, complex_nesting) {
   EXPECT_EQ(ie["else"]["binop"]["op"], "*");
 }
 TEST(astdump_tests, full_roundtrip_shape) {
-  auto r = parse_ok("\\f : int . \\g : int . f (g 1)");
+  auto r = parse_ok("(\\f : int -> int . \\g : int -> int . f (g 1)) (\\a : int . a) (\\a : int . a)");
   auto j = dump(r.first);
-  EXPECT_TRUE(j["abst"].is_object());
-  const auto& inner = j["abst"]["body"];
+  const auto& ab = j["appl"]["func"]["appl"]["func"]["abst"];
+  EXPECT_TRUE(ab.is_object());
+  const auto& inner = ab["body"];
   EXPECT_TRUE(inner["abst"].is_object());
   const auto& body = inner["abst"]["body"];
   EXPECT_TRUE(body["appl"].is_object());
@@ -236,29 +243,51 @@ TEST(astdump_tests, full_json_output) {
 }
 
 TEST(astdump_tests, full_json_output_y_combinator) {
-  auto r = parse_ok("\\f : () . (\\x : () . f (\\y : () . (x x) y)) (\\x : () . f (\\y : () . (x x) y))");
+  auto r = parse_ok(
+      "let y = fix (\\y : ((int -> int) -> (int -> int)) -> (int -> int) . "
+      "\\f : (int -> int) -> (int -> int) . \\n : int . f (y f) n) in "
+      "let fact = y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10");
   auto j = dump(r.first);
   auto expected = nlohmann::json::parse(R"(
     {
-      "abst": {
-        "param_type": {"unit": {}},
-        "body": {
-          "appl": {
-            "func": {
+      "appl": {
+        "arg": {
+          "fix": {
+            "body": {
               "abst": {
-                "param_type": {"unit": {}},
+                "param_type": {
+                  "arrow": {
+                    "from": {
+                      "arrow": {
+                        "from": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
+                        "to": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}}
+                      }
+                    },
+                    "to": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}}
+                  }
+                },
                 "body": {
-                  "appl": {
-                    "func": {"var": {"index": 1}},
-                    "arg": {
+                  "abst": {
+                    "param_type": {
+                      "arrow": {
+                        "from": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
+                        "to": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}}
+                      }
+                    },
+                    "body": {
                       "abst": {
-                        "param_type": {"unit": {}},
+                        "param_type": {"int": {}},
                         "body": {
                           "appl": {
                             "func": {
                               "appl": {
                                 "func": {"var": {"index": 1}},
-                                "arg": {"var": {"index": 1}}
+                                "arg": {
+                                  "appl": {
+                                    "func": {"var": {"index": 2}},
+                                    "arg": {"var": {"index": 1}}
+                                  }
+                                }
                               }
                             },
                             "arg": {"var": {"index": 0}}
@@ -269,25 +298,74 @@ TEST(astdump_tests, full_json_output_y_combinator) {
                   }
                 }
               }
+            }
+          }
+        },
+        "func": {
+          "abst": {
+            "param_type": {
+              "arrow": {
+                "from": {
+                  "arrow": {
+                    "from": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
+                    "to": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}}
+                  }
+                },
+                "to": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}}
+              }
             },
-            "arg": {
-              "abst": {
-                "param_type": {"unit": {}},
-                "body": {
+            "body": {
+              "appl": {
+                "func": {
+                  "abst": {
+                    "param_type": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
+                    "body": {
+                      "appl": {
+                        "func": {"var": {"index": 0}},
+                        "arg": {"li_int": {"value": 10}}
+                      }
+                    }
+                  }
+                },
+                "arg": {
                   "appl": {
-                    "func": {"var": {"index": 1}},
+                    "func": {"var": {"index": 0}},
                     "arg": {
                       "abst": {
-                        "param_type": {"unit": {}},
+                        "param_type": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
                         "body": {
-                          "appl": {
-                            "func": {
-                              "appl": {
-                                "func": {"var": {"index": 1}},
-                                "arg": {"var": {"index": 1}}
+                          "abst": {
+                            "param_type": {"int": {}},
+                            "body": {
+                              "ifexpr": {
+                                "cond": {
+                                  "binop": {
+                                    "op": null,
+                                    "left": {"var": {"index": 0}},
+                                    "right": {"li_int": {"value": 2}}
+                                  }
+                                },
+                                "then": {"li_int": {"value": 1}},
+                                "else": {
+                                  "binop": {
+                                    "op": "*",
+                                    "left": {"var": {"index": 0}},
+                                    "right": {
+                                      "appl": {
+                                        "func": {"var": {"index": 1}},
+                                        "arg": {
+                                          "binop": {
+                                            "op": "-",
+                                            "left": {"var": {"index": 0}},
+                                            "right": {"li_int": {"value": 1}}
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
                               }
-                            },
-                            "arg": {"var": {"index": 0}}
+                            }
                           }
                         }
                       }
@@ -302,6 +380,14 @@ TEST(astdump_tests, full_json_output_y_combinator) {
     }
   )");
   EXPECT_EQ(j, expected);
+}
+
+TEST(astdump_tests, fix_node) {
+  auto r = parse_ok("(fix (\\f : int -> int . \\n : int . n + 1)) 5");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["appl"]["func"]["fix"]["body"]["abst"]["param_type"],
+            nlohmann::json::parse(R"({"arrow":{"from":{"int":{}},"to":{"int":{}}}})"));
+  EXPECT_TRUE(j["appl"]["func"]["fix"]["body"]["abst"]["body"].contains("abst"));
 }
 
 TEST(astdump_tests, let_simple) {
@@ -324,44 +410,54 @@ TEST(astdump_tests, let_simple) {
 }
 
 TEST(astdump_tests, let_chain) {
-  auto r = parse_ok("\\g : int . let x = 1 in let y = 2 in (g x) + y");
-  // desugars to: \g:int. (\x:int. (\y:int. (g x) + y) 2) 1
+  auto r = parse_ok("(\\g : int -> int . let x = 1 in let y = 2 in (g x) + y) (\\a : int . a)");
+  // desugars to: (\g:int->int. (\x:int. (\y:int. (g x) + y) 2) 1) (\a:int. a)
   // g = index 2, x = index 1, y = index 0
   auto j = dump(r.first);
   auto expected = nlohmann::json::parse(R"(
     {
-      "abst": {
-        "param_type": {"int": {}},
-        "body": {
-          "appl": {
-            "func": {
-              "abst": {
-                "param_type": {"int": {}},
-                "body": {
-                  "appl": {
-                    "func": {
-                      "abst": {
-                        "param_type": {"int": {}},
-                        "body": {
-                          "binop": {
-                            "op": "+",
-                            "left": {
-                              "appl": {
-                                "func": {"var": {"index": 2}},
-                                "arg": {"var": {"index": 1}}
+      "appl": {
+        "func": {
+          "abst": {
+            "param_type": {"arrow": {"from": {"int": {}}, "to": {"int": {}}}},
+            "body": {
+              "appl": {
+                "func": {
+                  "abst": {
+                    "param_type": {"int": {}},
+                    "body": {
+                      "appl": {
+                        "func": {
+                          "abst": {
+                            "param_type": {"int": {}},
+                            "body": {
+                              "binop": {
+                                "op": "+",
+                                "left": {
+                                  "appl": {
+                                    "func": {"var": {"index": 2}},
+                                    "arg": {"var": {"index": 1}}
+                                  }
+                                },
+                                "right": {"var": {"index": 0}}
                               }
-                            },
-                            "right": {"var": {"index": 0}}
+                            }
                           }
-                        }
+                        },
+                        "arg": {"li_int": {"value": 2}}
                       }
-                    },
-                    "arg": {"li_int": {"value": 2}}
+                    }
                   }
-                }
+                },
+                "arg": {"li_int": {"value": 1}}
               }
-            },
-            "arg": {"li_int": {"value": 1}}
+            }
+          }
+        },
+        "arg": {
+          "abst": {
+            "param_type": {"int": {}},
+            "body": {"var": {"index": 0}}
           }
         }
       }

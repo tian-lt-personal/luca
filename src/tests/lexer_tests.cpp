@@ -48,7 +48,8 @@ INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
                                            test_case{.source = "true", .expected = tk::kw_true{}},
                                            test_case{.source = "false", .expected = tk::kw_false{}},
                                            test_case{.source = "int", .expected = tk::kw_int{}},
-                                           test_case{.source = "string", .expected = tk::kw_string{}}));
+                                           test_case{.source = "string", .expected = tk::kw_string{}},
+                                           test_case{.source = "fix", .expected = tk::kw_fix{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
