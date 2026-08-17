@@ -24,13 +24,13 @@ TEST_P(lexer_theory, next) {
   auto res = l.next();
   if (p.expected.has_value()) {
     ASSERT_TRUE(res.has_value());
-    EXPECT_EQ(*res, *p.expected);
+    EXPECT_EQ(res->t, *p.expected);
     auto eof = l.next();
     ASSERT_FALSE(eof.has_value());
-    EXPECT_EQ(eof.error(), lex_err{lex_err_eof{}});
+    EXPECT_EQ(eof.error().index(), lex_err{lex_err_eof{}}.index());
   } else {
     ASSERT_FALSE(res.has_value());
-    EXPECT_EQ(res.error(), p.expected.error());
+    EXPECT_EQ(res.error().index(), p.expected.error().index());
   }
 }
 
@@ -75,11 +75,11 @@ INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                              test_case{.source = "a1-b2_c3", .expected = tk::id{.name = "a1-b2_c3"}},
                              test_case{.source = "_foo-bar_", .expected = tk::id{.name = "_foo-bar_"}},
                              // invalid: glued errors (starts with digit, followed by id chars)
-                             test_case{.source = "123abc", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "123-abc", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0_foo", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "42-", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "9_", .expected = std::unexpected{lex_err_unknown{}}}));
+                             test_case{.source = "123abc", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "123-abc", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0_foo", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "42-", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "9_", .expected = std::unexpected{lex_err_glued{}}}));
 INSTANTIATE_TEST_SUITE_P(literal_int_tokens, lexer_theory,
                          ::testing::Values(
                              // single digits
@@ -100,24 +100,24 @@ INSTANTIATE_TEST_SUITE_P(literal_int_tokens, lexer_theory,
                              // unsupported numeric bases (e.g., hex, binary)
                              // these will trigger glued_err because "0" is matched as number,
                              // and "x" or "b" triggers the error capture.
-                             test_case{.source = "0x00", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0x1A", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0b10", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0o77", .expected = std::unexpected{lex_err_unknown{}}},
+                             test_case{.source = "0x00", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0x1A", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0b10", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0o77", .expected = std::unexpected{lex_err_glued{}}},
                              // unsupported digit separators (e.g., underscores in numbers)
-                             test_case{.source = "1_000", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "123_456", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "42_", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0_", .expected = std::unexpected{lex_err_unknown{}}},
+                             test_case{.source = "1_000", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "123_456", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "42_", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0_", .expected = std::unexpected{lex_err_glued{}}},
                              // glued letters
-                             test_case{.source = "1a", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "123abc", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "99bottles", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0xyz", .expected = std::unexpected{lex_err_unknown{}}},
+                             test_case{.source = "1a", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "123abc", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "99bottles", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0xyz", .expected = std::unexpected{lex_err_glued{}}},
                              // glued hyphens
-                             test_case{.source = "456-", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "1-2", .expected = std::unexpected{lex_err_unknown{}}},
-                             test_case{.source = "0-", .expected = std::unexpected{lex_err_unknown{}}}));
+                             test_case{.source = "456-", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "1-2", .expected = std::unexpected{lex_err_glued{}}},
+                             test_case{.source = "0-", .expected = std::unexpected{lex_err_glued{}}}));
 INSTANTIATE_TEST_SUITE_P(
     literal_string_tokens, lexer_theory,
     ::testing::Values(
@@ -136,17 +136,17 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = "\"escaped \\\" quotes\"", .expected = tk::li_str{.raw = "escaped \\\" quotes"}},
         test_case{.source = "\"escaped \\\\ slash\"", .expected = tk::li_str{.raw = "escaped \\\\ slash"}},
         // invalid: unclosed strings ending at EOF
-        test_case{.source = "\"", .expected = std::unexpected{lex_err_unknown{}}},
-        test_case{.source = "\"unclosed EOF", .expected = std::unexpected{lex_err_unknown{}}},
-        test_case{.source = "\"unclosed with \\\" quote", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"", .expected = std::unexpected{lex_err_str{}}},
+        test_case{.source = "\"unclosed EOF", .expected = std::unexpected{lex_err_str{}}},
+        test_case{.source = "\"unclosed with \\\" quote", .expected = std::unexpected{lex_err_str{}}},
         // invalid: unclosed strings hitting a newline
         // the rule forbids raw newlines inside the quotes.
-        test_case{.source = "\"unclosed\n\"", .expected = std::unexpected{lex_err_unknown{}}},
-        test_case{.source = "\"line1\nline2\"", .expected = std::unexpected{lex_err_unknown{}}},
+        test_case{.source = "\"unclosed\n\"", .expected = std::unexpected{lex_err_str{}}},
+        test_case{.source = "\"line1\nline2\"", .expected = std::unexpected{lex_err_str{}}},
         // invalid: trailing escape character at EOF or Newline
         // prevents matching an escape sequence that eats the null-terminator.
-        test_case{.source = "\"trailing escape \\", .expected = std::unexpected{lex_err_unknown{}}},
-        test_case{.source = "\"trailing escape \\\n", .expected = std::unexpected{lex_err_unknown{}}}));
+        test_case{.source = "\"trailing escape \\", .expected = std::unexpected{lex_err_str{}}},
+        test_case{.source = "\"trailing escape \\\n", .expected = std::unexpected{lex_err_str{}}}));
 INSTANTIATE_TEST_SUITE_P(
     operator_tokens, lexer_theory,
     ::testing::Values(
@@ -166,29 +166,76 @@ INSTANTIATE_TEST_SUITE_P(
 TEST(lexer_tests, multiple_tokens) {
   std::string source = "  foo_bar \n = \t 123 + \"hello\" -   42  ";
   lexer l{source};
-  lex_result expected_seq[] = {
+  std::expected<token, lex_err> expected_seq[] = {
       tk::id{.name = "foo_bar"},  tk::op_eq{},    tk::li_int{.value = "123"}, tk::op_plus{},
       tk::li_str{.raw = "hello"}, tk::op_minus{}, tk::li_int{.value = "42"},  std::unexpected{lex_err_eof{}},
   };
   for (size_t i = 0; i < std::size(expected_seq); ++i) {
     auto actual = l.next();
-    EXPECT_EQ(actual, expected_seq[i]) << "mismatch at " << i;
+    if (actual.has_value()) {
+      ASSERT_TRUE(expected_seq[i].has_value());
+      EXPECT_EQ(actual->t, *expected_seq[i]) << "mismatch at " << i;
+    } else {
+      ASSERT_FALSE(expected_seq[i].has_value());
+      EXPECT_EQ(actual.error().index(), expected_seq[i].error().index()) << "mismatch at " << i;
+    }
   }
   auto actual = l.next();
-  EXPECT_EQ(actual, lex_result{std::unexpected{lex_err_eof{}}});
+  ASSERT_FALSE(actual.has_value());
 }
 TEST(lexer_tests, comment_skips_to_newline) {
   std::string source = "// first line comment\n42 // inline comment\nlet\n";
   lexer l{source};
-  lex_result expected_seq[] = {
+  std::expected<token, lex_err> expected_seq[] = {
       tk::li_int{.value = "42"},
       tk::kw_let{},
       std::unexpected{lex_err_eof{}},
   };
   for (size_t i = 0; i < std::size(expected_seq); ++i) {
     auto actual = l.next();
-    EXPECT_EQ(actual, expected_seq[i]) << "mismatch at " << i;
+    if (actual.has_value()) {
+      ASSERT_TRUE(expected_seq[i].has_value());
+      EXPECT_EQ(actual->t, *expected_seq[i]) << "mismatch at " << i;
+    } else {
+      ASSERT_FALSE(expected_seq[i].has_value());
+      EXPECT_EQ(actual.error().index(), expected_seq[i].error().index()) << "mismatch at " << i;
+    }
   }
+}
+
+TEST(lexer_tests, token_spans) {
+  std::string source = "  foo \n123+";
+  lexer l{source};
+  auto id_tok = l.next();
+  ASSERT_TRUE(id_tok.has_value());
+  EXPECT_EQ(id_tok->loc, (src_range{2, 5}));
+  auto num = l.next();
+  ASSERT_TRUE(num.has_value());
+  EXPECT_EQ(num->loc, (src_range{7, 10}));
+  auto plus = l.next();
+  ASSERT_TRUE(plus.has_value());
+  EXPECT_EQ(plus->loc, (src_range{10, 11}));
+  auto eof = l.next();
+  ASSERT_FALSE(eof.has_value());
+  EXPECT_EQ(std::visit([](const auto& e) { return e.loc; }, eof.error()), (src_range{11, 11}));
+}
+
+TEST(lexer_tests, string_span_includes_quotes) {
+  std::string source = "\"hi\"";
+  lexer l{source};
+  auto res = l.next();
+  ASSERT_TRUE(res.has_value());
+  EXPECT_EQ(res->t, token{tk::li_str{.raw = "hi"}});
+  EXPECT_EQ(res->loc, (src_range{0, 4}));
+}
+
+TEST(lexer_tests, glued_error_span) {
+  std::string source = "1_000";
+  lexer l{source};
+  auto res = l.next();
+  ASSERT_FALSE(res.has_value());
+  EXPECT_EQ(res.error().index(), lex_err{lex_err_glued{}}.index());
+  EXPECT_EQ(std::visit([](const auto& e) { return e.loc; }, res.error()), (src_range{0, 5}));
 }
 
 }  // namespace tests

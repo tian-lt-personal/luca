@@ -1,6 +1,7 @@
 // std
 #include <cassert>
 #include <optional>
+#include <string>
 // luca
 #include "lexer.hpp"
 #include "mp.hpp"
@@ -47,6 +48,83 @@ ast::type* make_type(ast::context& actx, T value) {
   return alloc.new_object<ast::type>(std::move(value));
 }
 
+struct parsed {
+  ast::term term;
+  src_range loc;
+};
+
+[[noreturn]] void fail(diagnostic d) { throw parse_err{std::move(d)}; }
+
+std::string type_name(const ast::type& t) {
+  return std::visit(overloaded{
+                        [](const ast::type_unit&) { return std::string{"unit"}; },
+                        [](const ast::type_int&) { return std::string{"int"}; },
+                        [](const ast::type_bool&) { return std::string{"bool"}; },
+                        [](const ast::type_string&) { return std::string{"string"}; },
+                        [](const ast::type_arrow& a) { return type_name(*a.from) + " -> " + type_name(*a.to); },
+                    },
+                    t);
+}
+
+std::string token_text(const token& t) {
+  return std::visit(overloaded{
+                        [](const tk::id& id) { return std::string{id.name}; },
+                        [](const tk::li_int& n) { return std::string{n.value}; },
+                        [](const tk::li_str&) { return std::string{"a string literal"}; },
+                        [](const tk::kw_lambda&) { return std::string{"\\"}; },
+                        [](const tk::kw_let&) { return std::string{"let"}; },
+                        [](const tk::kw_in&) { return std::string{"in"}; },
+                        [](const tk::kw_if&) { return std::string{"if"}; },
+                        [](const tk::kw_then&) { return std::string{"then"}; },
+                        [](const tk::kw_else&) { return std::string{"else"}; },
+                        [](const tk::kw_true&) { return std::string{"true"}; },
+                        [](const tk::kw_false&) { return std::string{"false"}; },
+                        [](const tk::kw_bool&) { return std::string{"bool"}; },
+                        [](const tk::kw_int&) { return std::string{"int"}; },
+                        [](const tk::kw_string&) { return std::string{"string"}; },
+                        [](const tk::kw_fix&) { return std::string{"fix"}; },
+                        [](const tk::op_plus&) { return std::string{"+"}; },
+                        [](const tk::op_minus&) { return std::string{"-"}; },
+                        [](const tk::op_mul&) { return std::string{"*"}; },
+                        [](const tk::op_div&) { return std::string{"/"}; },
+                        [](const tk::op_eq&) { return std::string{"="}; },
+                        [](const tk::op_ne&) { return std::string{"!="}; },
+                        [](const tk::op_gt&) { return std::string{">"}; },
+                        [](const tk::op_lt&) { return std::string{"<"}; },
+                        [](const tk::op_arrow&) { return std::string{"->"}; },
+                        [](const tk::op_comma&) { return std::string{","}; },
+                        [](const tk::op_colon&) { return std::string{":"}; },
+                        [](const tk::op_dot&) { return std::string{"."}; },
+                        [](const tk::lparen&) { return std::string{"("}; },
+                        [](const tk::rparen&) { return std::string{")"}; },
+                    },
+                    t);
+}
+
+std::string found_text(const lex_result& cur) {
+  if (cur.has_value()) return "'" + token_text(cur->t) + "'";
+  if (std::holds_alternative<lex_err_eof>(cur.error())) return "end of input";
+  return "an invalid character";
+}
+
+src_range err_loc(const lex_err& e) noexcept {
+  return std::visit([](const auto& err) { return err.loc; }, e);
+}
+
+diagnostic lex_err_diag(const lex_err& e) {
+  auto [code, msg, hint] = std::visit(
+      overloaded{
+          [](const lex_err_eof&) { return std::tuple{"A001", "unexpected end of input", ""}; },
+          [](const lex_err_char&) { return std::tuple{"A001", "unexpected character", ""}; },
+          [](const lex_err_str&) {
+            return std::tuple{"A002", "unterminated string literal", "close the string with a double quote"};
+          },
+          [](const lex_err_glued&) { return std::tuple{"A003", "identifiers cannot start with a digit", ""}; },
+      },
+      e);
+  return {err_loc(e), code, msg, hint};
+}
+
 class parser {
  public:
   explicit parser(const std::string& source)
@@ -56,88 +134,115 @@ class parser {
         curtok_(lex_.next()),
         nextok_(lex_.next()) {}
   parse_result run_pass() && {
-    auto term = parse_tem();
-    return {std::move(term), std::move(actx_)};
+    auto t = parse_tem();
+    return {std::move(t.term), std::move(actx_)};
   }
 
  private:
-  ast::term parse_tem() {
+  parsed parse_tem() {
     auto t = parse_expr(0);
-    if (auto ty = sema_.type_of(t); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
-      throw parse_err_unknown{};
+    if (auto ty = sema_.type_of(t.term); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
+      fail({t.loc, "C009", "top-level expression must have a value type, got '" + type_name(*ty) + "'",
+            "apply the function to an argument"});
     return t;
   }
-  ast::term parse_expr(int precedence) {
+  parsed parse_expr(int precedence) {
     auto left = parse_prefix();
     while (true) {
       if (!curtok_.has_value()) {
         if (std::holds_alternative<lex_err_eof>(curtok_.error())) break;
-        throw parse_err_unknown{};
+        fail(lex_err_diag(curtok_.error()));
       }
       if (auto prec = infix_precedence(peek()); prec.has_value() && *prec > precedence) {
         auto op = peek();
+        auto op_loc = curtok_->loc;
         advance();
-        left = parse_infix(std::move(left), op);
+        left = parse_infix(std::move(left), op, op_loc);
         continue;
       }
       if (is_start_of_expr(peek()) && prec_appl > precedence) {
         auto rhs = parse_expr(prec_appl);
-        if (auto fty = sema_.type_of(left), aty = sema_.type_of(rhs); fty.has_value()) {
+        if (auto fty = sema_.type_of(left.term); fty.has_value()) {
           auto* arrow = std::get_if<ast::type_arrow>(&*fty);
-          if (!arrow || (aty.has_value() && !same_type(*arrow->from, *aty))) throw parse_err_unknown{};
+          if (!arrow)
+            fail({left.loc, "C002", "cannot apply value of type '" + type_name(*fty) + "'",
+                  "only functions can be applied"});
+          if (auto aty = sema_.type_of(rhs.term); aty.has_value() && !same_type(*arrow->from, *aty))
+            fail({rhs.loc, "C003",
+                  "cannot pass value of type '" + type_name(*aty) + "' to parameter of type '" +
+                      type_name(*arrow->from) + "'",
+                  "pass an argument of the parameter type"});
         }
-        left = ast::term{ast::appl{.func = make_term(actx_, std::move(left)), .arg = make_term(actx_, std::move(rhs))}};
+        left = parsed{ast::term{ast::appl{.func = make_term(actx_, std::move(left.term)),
+                                          .arg = make_term(actx_, std::move(rhs.term))}},
+                      {left.loc.begin, rhs.loc.end}};
         continue;
       }
       break;
     }
     return left;
   }
-  ast::term parse_prefix() {
-    if (!curtok_.has_value()) throw parse_err_with_lexer_err{curtok_.error()};
+  parsed parse_prefix() {
+    if (!curtok_.has_value()) {
+      if (std::holds_alternative<lex_err_eof>(curtok_.error()))
+        fail({err_loc(curtok_.error()), "B006", "unexpected end of input", "complete the expression"});
+      fail(lex_err_diag(curtok_.error()));
+    }
     return std::visit(overloaded{
                           [this](tk::kw_lambda) { return parse_lambda(); },
                           [this](tk::kw_let) { return parse_let(); },
                           [this](tk::kw_if) { return parse_if(); },
                           [this](tk::kw_fix) { return parse_fix(); },
-                          [this](tk::lparen) -> ast::term {
+                          [this](tk::lparen) -> parsed {
                             advance();
                             auto inner = parse_expr(0);
-                            expect<tk::rparen>();
+                            expect<tk::rparen>("')'");
                             return inner;
                           },
-                          [this](tk::op_minus) -> ast::term {
+                          [this](tk::op_minus) -> parsed {
+                            auto loc = curtok_->loc;
                             advance();
                             auto rhs = parse_expr(prec_unary_minus);
-                            return ast::term{ast::binop{.op = tk::op_minus{},
-                                                        .left = make_term(actx_, ast::li_int{0}),
-                                                        .right = make_term(actx_, std::move(rhs))}};
+                            return {ast::term{ast::binop{.op = tk::op_minus{},
+                                                         .left = make_term(actx_, ast::li_int{0}),
+                                                         .right = make_term(actx_, std::move(rhs.term))}},
+                                    {loc.begin, rhs.loc.end}};
                           },
-                          [this](auto) -> ast::term { return parse_atom(); },
+                          [this](auto) -> parsed { return parse_atom(); },
                       },
-                      *curtok_);
+                      curtok_->t);
   }
-  ast::term parse_atom() {
+  parsed parse_atom() {
     auto tok = peek();
+    auto loc = curtok_->loc;
     advance();
     return std::visit(overloaded{
-                          [this](tk::id id) -> ast::term {
+                          [this, loc](tk::id id) -> parsed {
                             auto idx = sema_.resolve_binding_index(id.name);
-                            if (!idx.has_value()) throw parse_err_unknown{};
-                            return ast::term{ast::var{*idx}};
+                            if (!idx.has_value())
+                              fail({loc, "C001", "unbound identifier '" + std::string{id.name} + "'",
+                                    "bind it with a lambda parameter or a let expression"});
+                            return {ast::term{ast::var{*idx}}, loc};
                           },
-                          [](tk::li_int lit) -> ast::term {
+                          [loc](tk::li_int lit) -> parsed {
                             int val = 0;
                             for (char c : lit.value) val = val * 10 + (c - '0');
-                            return ast::term{ast::li_int{val}};
+                            return {ast::term{ast::li_int{val}}, loc};
                           },
-                          [](tk::kw_true) -> ast::term { return ast::term{ast::li_bool{true}}; },
-                          [](tk::kw_false) -> ast::term { return ast::term{ast::li_bool{false}}; },
-                          [](auto) -> ast::term { throw parse_err_unknown{}; },
+                          [loc](tk::kw_true) -> parsed { return {ast::term{ast::li_bool{true}}, loc}; },
+                          [loc](tk::kw_false) -> parsed { return {ast::term{ast::li_bool{false}}, loc}; },
+                          [loc, tok](auto) -> parsed {
+                            fail({loc, "B001", "unexpected token '" + token_text(tok) + "'", "expected an expression"});
+                          },
                       },
                       tok);
   }
   ast::type parse_type() {
+    if (!curtok_.has_value()) {
+      if (std::holds_alternative<lex_err_eof>(curtok_.error()))
+        fail({err_loc(curtok_.error()), "B006", "unexpected end of input", "complete the expression"});
+      fail(lex_err_diag(curtok_.error()));
+    }
     auto base = std::visit(overloaded{
                                [this](tk::kw_int) -> ast::type {
                                  advance();
@@ -153,116 +258,155 @@ class parser {
                                },
                                [this](tk::lparen) -> ast::type {
                                  advance();
-                                 if (std::holds_alternative<tk::rparen>(peek())) {
+                                 if (curtok_.has_value() && std::holds_alternative<tk::rparen>(curtok_->t)) {
                                    advance();
                                    return ast::type{ast::type_unit{}};
                                  }
                                  auto inner = parse_type();
-                                 expect<tk::rparen>();
+                                 expect<tk::rparen>("')'");
                                  return inner;
                                },
-                               [](auto) -> ast::type { throw parse_err_unknown{}; },
+                               [this](auto) -> ast::type {
+                                 fail({curtok_->loc, "B002", "expected a type, found " + found_text(curtok_),
+                                       "types are int, bool, string, () and (type)"});
+                               },
                            },
                            peek());
-    if (curtok_.has_value() && std::holds_alternative<tk::op_arrow>(*curtok_)) {
+    if (curtok_.has_value() && std::holds_alternative<tk::op_arrow>(curtok_->t)) {
       advance();
       return ast::type{
           ast::type_arrow{.from = make_type(actx_, std::move(base)), .to = make_type(actx_, parse_type())}};
     }
     return base;
   }
-  ast::term parse_lambda() {
+  parsed parse_lambda() {
+    auto start = curtok_->loc;
     advance();
     check_curtok();
 
     auto* id = std::get_if<tk::id>(&peek());
-    if (!id) throw parse_err_unknown{};
+    if (!id)
+      fail({curtok_->loc, "B003", "expected an identifier after '\\', found " + found_text(curtok_),
+            "write \\name : type . body"});
     auto name = id->name;
     advance();
-    expect<tk::op_colon>();
+    expect<tk::op_colon>("':'");
     auto param_type = parse_type();
 
-    expect<tk::op_dot>();
+    expect<tk::op_dot>("'.'");
     sema_.push_binding(name, param_type);
     auto body = parse_expr(0);
     sema_.pop_binding();
-    return ast::term{ast::abst{.param_type = std::move(param_type), .body = make_term(actx_, std::move(body))}};
+    return {ast::term{ast::abst{.param_type = std::move(param_type), .body = make_term(actx_, std::move(body.term))}},
+            {start.begin, body.loc.end}};
   }
-  ast::term parse_if() {
+  parsed parse_if() {
+    auto start = curtok_->loc;
     advance();
     auto cond = parse_expr(0);
-    if (auto ty = sema_.type_of(cond); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
-      throw parse_err_unknown{};
-    expect<tk::kw_then>();
+    if (auto ty = sema_.type_of(cond.term); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
+      fail({cond.loc, "C004", "if condition must be 'bool', found '" + type_name(*ty) + "'", ""});
+    expect<tk::kw_then>("'then'");
     auto then_expr = parse_expr(0);
-    expect<tk::kw_else>();
+    expect<tk::kw_else>("'else'");
     auto else_expr = parse_expr(0);
-    if (auto then_ty = sema_.type_of(then_expr), else_ty = sema_.type_of(else_expr);
+    if (auto then_ty = sema_.type_of(then_expr.term), else_ty = sema_.type_of(else_expr.term);
         then_ty.has_value() && else_ty.has_value() && !same_type(*then_ty, *else_ty))
-      throw parse_err_unknown{};
-    return ast::term{ast::ifexpr{.cond = make_term(actx_, std::move(cond)),
-                                 .then = make_term(actx_, std::move(then_expr)),
-                                 .els = make_term(actx_, std::move(else_expr))}};
+      fail({else_expr.loc, "C005",
+            "if branches must have the same type: '" + type_name(*then_ty) + "' vs '" + type_name(*else_ty) + "'",
+            "make both branches produce the same type"});
+    return {ast::term{ast::ifexpr{.cond = make_term(actx_, std::move(cond.term)),
+                                  .then = make_term(actx_, std::move(then_expr.term)),
+                                  .els = make_term(actx_, std::move(else_expr.term))}},
+            {start.begin, else_expr.loc.end}};
   }
-  ast::term parse_let() {
+  parsed parse_let() {
+    auto start = curtok_->loc;
     advance();
     check_curtok();
 
     auto* id = std::get_if<tk::id>(&peek());
-    if (!id) throw parse_err_unknown{};
+    if (!id)
+      fail({curtok_->loc, "B004", "expected an identifier after 'let', found " + found_text(curtok_),
+            "write let name = expr in body"});
     auto name = id->name;
     advance();
 
-    expect<tk::op_eq>();
+    expect<tk::op_eq>("'='");
     auto bound_expr = parse_expr(0);
-    auto bound_ty = sema_.type_of(bound_expr);
-    if (!bound_ty.has_value()) throw parse_err_unknown{};
+    auto bound_ty = sema_.type_of(bound_expr.term);
+    if (!bound_ty.has_value())
+      fail({bound_expr.loc, "C006", "cannot infer the type of the bound expression",
+            "check for unbound identifiers inside"});
 
-    expect<tk::kw_in>();
+    expect<tk::kw_in>("'in'");
     sema_.push_binding(name, *bound_ty);
     auto body = parse_expr(0);
     sema_.pop_binding();
 
-    return ast::term{ast::appl{
-        .func = make_term(
-            actx_, ast::term{ast::abst{.param_type = *std::move(bound_ty), .body = make_term(actx_, std::move(body))}}),
-        .arg = make_term(actx_, std::move(bound_expr))}};
+    return {ast::term{ast::appl{
+                .func = make_term(actx_, ast::term{ast::abst{.param_type = *std::move(bound_ty),
+                                                             .body = make_term(actx_, std::move(body.term))}}),
+                .arg = make_term(actx_, std::move(bound_expr.term))}},
+            {start.begin, body.loc.end}};
   }
-  ast::term parse_fix() {
+  parsed parse_fix() {
+    auto start = curtok_->loc;
     advance();
     auto operand = parse_expr(prec_appl);
-    auto* op_abst = std::get_if<ast::abst>(&operand);
-    if (!op_abst || !std::get_if<ast::abst>(op_abst->body)) throw parse_err_unknown{};
-    if (auto ty = sema_.type_of(operand); ty.has_value()) {
+    auto* op_abst = std::get_if<ast::abst>(&operand.term);
+    if (!op_abst || !std::get_if<ast::abst>(op_abst->body))
+      fail({operand.loc, "B007", "fix expects a lambda whose body is a lambda",
+            "write fix (\\f : τ -> τ . \\x : σ . body)"});
+    if (auto ty = sema_.type_of(operand.term); ty.has_value()) {
       auto* arrow = std::get_if<ast::type_arrow>(&*ty);
-      if (!arrow || !same_type(*arrow->from, *arrow->to)) throw parse_err_unknown{};
+      if (!arrow || !same_type(*arrow->from, *arrow->to))
+        fail({operand.loc, "C007", "fix generator must be of type τ -> τ, found '" + type_name(*ty) + "'",
+              "the generator's parameter type must equal its result type"});
     }
-    return ast::term{ast::fix{.body = make_term(actx_, std::move(operand))}};
+    return {ast::term{ast::fix{.body = make_term(actx_, std::move(operand.term))}}, {start.begin, operand.loc.end}};
   }
-  ast::term parse_infix(ast::term left, token op) {
+  parsed parse_infix(parsed left, token op, src_range op_loc) {
     int prec = *infix_precedence(op);
     auto right = parse_expr(prec);
-    if (auto lty = sema_.type_of(left), rty = sema_.type_of(right);
+    if (auto lty = sema_.type_of(left.term), rty = sema_.type_of(right.term);
         lty.has_value() && rty.has_value() &&
-        (!std::holds_alternative<ast::type_int>(*lty) || !std::holds_alternative<ast::type_int>(*rty)))
-      throw parse_err_unknown{};
-    return ast::term{ast::binop{
-        .op = std::move(op), .left = make_term(actx_, std::move(left)), .right = make_term(actx_, std::move(right))}};
+        (!std::holds_alternative<ast::type_int>(*lty) || !std::holds_alternative<ast::type_int>(*rty))) {
+      bool left_ok = std::holds_alternative<ast::type_int>(*lty);
+      fail(
+          {left_ok ? right.loc : left.loc, "C008",
+           "operator '" + token_text(op) + "' expects 'int' operands, found '" + type_name(left_ok ? *rty : *lty) + "'",
+           "arithmetic and comparison operators require int operands"});
+    }
+    return {ast::term{ast::binop{.op = std::move(op),
+                                 .left = make_term(actx_, std::move(left.term)),
+                                 .right = make_term(actx_, std::move(right.term))}},
+            {left.loc.begin, right.loc.end}};
   }
   const token& peek() const noexcept {
     assert(curtok_.has_value());
-    return *curtok_;
+    return curtok_->t;
   }
   void advance() noexcept {
     curtok_ = nextok_;
     nextok_ = lex_.next();
   }
   void check_curtok() const {
-    if (!curtok_.has_value()) throw parse_err_unknown{};
+    if (!curtok_.has_value()) {
+      if (std::holds_alternative<lex_err_eof>(curtok_.error()))
+        fail({err_loc(curtok_.error()), "B006", "unexpected end of input", "complete the expression"});
+      fail(lex_err_diag(curtok_.error()));
+    }
   }
   template <class T>
-  void expect() {
-    if (!curtok_.has_value() || !std::holds_alternative<T>(*curtok_)) throw parse_err_unknown{};
+  void expect(std::string_view what) {
+    if (!curtok_.has_value()) {
+      if (std::holds_alternative<lex_err_eof>(curtok_.error()))
+        fail({err_loc(curtok_.error()), "B005", "expected " + std::string{what} + ", found end of input", ""});
+      fail(lex_err_diag(curtok_.error()));
+    }
+    if (!std::holds_alternative<T>(curtok_->t))
+      fail({curtok_->loc, "B005", "expected " + std::string{what} + ", found " + found_text(curtok_), ""});
     advance();
   }
 

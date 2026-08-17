@@ -601,4 +601,64 @@ INSTANTIATE_TEST_SUITE_P(fix, parser_error_theory,
                                            "fix (\\f : int -> int . \\x : bool . 1)",
                                            "fix (\\f : int -> int . \\n : int . n + 1)"));
 
+// -- diagnostics -------------------------------------------------------------
+
+struct parser_diag_theory : ::testing::TestWithParam<std::pair<std::string, std::string>> {};
+TEST_P(parser_diag_theory, code) {
+  const auto& [src, code] = GetParam();
+  try {
+    parse(src);
+    FAIL() << "expected a diagnostic for: " << src;
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, code);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    codes, parser_diag_theory,
+    ::testing::Values(std::pair{"x", "C001"}, std::pair{"int", "B001"}, std::pair{"\\x : if . x", "B002"},
+                      std::pair{"\\int . x", "B003"}, std::pair{"let 1 = 2 in 3", "B004"}, std::pair{"(1 + 2", "B005"},
+                      std::pair{"\\x : int", "B005"}, std::pair{"1 +", "B006"}, std::pair{"\\", "B006"},
+                      std::pair{"(\\f : int . f 5) 1", "C002"}, std::pair{"(\\f : int -> int . f true) 1", "C003"},
+                      std::pair{"if 42 then 1 else 2", "C004"}, std::pair{"if true then 1 else true", "C005"},
+                      std::pair{"fix 42", "B007"}, std::pair{"fix (\\f : int -> int . \\x : bool . 1)", "C007"},
+                      std::pair{"1 + true", "C008"}, std::pair{"\\x : int -> int . x", "C009"}, std::pair{"@", "A001"},
+                      std::pair{"\"unclosed", "A002"}, std::pair{"123abc", "A003"}));
+
+TEST(parser_tests, diag_position_multiline) {
+  try {
+    parse("1 +\ntrue");
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "C008");
+    EXPECT_EQ(e.diag.loc, (src_range{4, 8}));
+    EXPECT_EQ(render(e.diag, "1 +\ntrue", "t.luca"),
+              "t.luca:2:1: error: operator '+' expects 'int' operands, found 'bool'\n"
+              "  true\n"
+              "  ^~~~\n"
+              "hint: arithmetic and comparison operators require int operands\n");
+  }
+}
+
+TEST(parser_tests, diag_position_eof) {
+  try {
+    parse("1 +");
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "B006");
+    EXPECT_EQ(e.diag.loc, (src_range{3, 3}));
+  }
+}
+
+TEST(parser_tests, diag_position_arg_mismatch) {
+  // "true" is on line 2, columns 3-6; the caret underlines it
+  try {
+    parse("let f = \\x : int . x + 1 in\nf true");
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "C003");
+    EXPECT_EQ(e.diag.loc, (src_range{30, 34}));
+  }
+}
+
 }  // namespace tests
