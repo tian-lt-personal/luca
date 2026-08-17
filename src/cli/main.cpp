@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 // luca
 #include <astdump.hpp>
+#include <diag.hpp>
 #include <machine.hpp>
 #include <mp.hpp>
 #include <parser.hpp>
@@ -46,7 +47,7 @@ int main(int argc, char** argv) {
                  v);
     }
   } catch (const parse_err& e) {
-    std::cerr << "parse error: " << e.what() << '\n';
+    std::cerr << render(e.diag, source, file) << '\n';
     return 1;
   } catch (const std::logic_error& e) {
     std::cerr << "error: " << e.what() << '\n';

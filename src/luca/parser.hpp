@@ -9,6 +9,7 @@
 #include <string>
 #include <variant>
 // luca
+#include "diag.hpp"
 #include "lexer.hpp"
 
 namespace ast {
@@ -64,16 +65,8 @@ struct context {
 }  // namespace ast
 
 struct parse_err : std::runtime_error {
-  using std::runtime_error::runtime_error;
-};
-
-struct parse_err_unknown : parse_err {
-  parse_err_unknown() : parse_err{"unknown parse error"} {}
-};
-
-struct parse_err_with_lexer_err : parse_err {
-  lex_err err;
-  explicit parse_err_with_lexer_err(lex_err e) : parse_err{"lexer error"}, err{std::move(e)} {}
+  diagnostic diag;
+  explicit parse_err(diagnostic d) : std::runtime_error{d.message}, diag{std::move(d)} {}
 };
 
 using parse_result = std::pair<ast::term, ast::context>;

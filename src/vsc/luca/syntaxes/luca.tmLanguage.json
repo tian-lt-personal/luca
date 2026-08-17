@@ -52,7 +52,7 @@
         },
         {
           "name": "keyword.other.luca",
-          "match": "\\b(let|in|lambda)\\b|\\\\"
+          "match": "\\b(let|in|lambda|fix)\\b|\\\\"
         }
       ]
     },

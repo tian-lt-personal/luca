@@ -24,48 +24,54 @@ lex_result lexer::next() noexcept {
     string       = ["] (str_char | str_esc)* ["];
     str_err      = ["] (str_char | str_esc)*;
 
-    * { return std::unexpected{lex_err_unknown{}}; }
-    $ { return std::unexpected{lex_err_eof{}}; }
+    *          { return std::unexpected{lex_err_char{.loc = cur_span()}}; }
+    $          {
+      // point end-of-input at the end of the last line with content
+      size_t off = static_cast<size_t>(cur_ - src_);
+      while (off > 0 && src_[off - 1] == '\n') --off;
+      return std::unexpected{lex_err_eof{.loc = {off, off}}};
+    }
 
-    "("        { return tk::lparen{}; }
-    ")"        { return tk::rparen{}; }
-    "+"        { return tk::op_plus{}; }
-    "-"        { return tk::op_minus{}; }
-    "*"        { return tk::op_mul{}; }
-    "/"        { return tk::op_div{}; }
-    "="        { return tk::op_eq{}; }
-    "!="       { return tk::op_ne{}; }
-    ">"        { return tk::op_gt{}; }
-    "<"        { return tk::op_lt{}; }
-    "->"       { return tk::op_arrow{}; }
-    ","        { return tk::op_comma{}; }
-    ":"        { return tk::op_colon{}; }
-    "."        { return tk::op_dot{}; }
+    "("        { return token_span{tk::lparen{}, cur_span()}; }
+    ")"        { return token_span{tk::rparen{}, cur_span()}; }
+    "+"        { return token_span{tk::op_plus{}, cur_span()}; }
+    "-"        { return token_span{tk::op_minus{}, cur_span()}; }
+    "*"        { return token_span{tk::op_mul{}, cur_span()}; }
+    "/"        { return token_span{tk::op_div{}, cur_span()}; }
+    "="        { return token_span{tk::op_eq{}, cur_span()}; }
+    "!="       { return token_span{tk::op_ne{}, cur_span()}; }
+    ">"        { return token_span{tk::op_gt{}, cur_span()}; }
+    "<"        { return token_span{tk::op_lt{}, cur_span()}; }
+    "->"       { return token_span{tk::op_arrow{}, cur_span()}; }
+    ","        { return token_span{tk::op_comma{}, cur_span()}; }
+    ":"        { return token_span{tk::op_colon{}, cur_span()}; }
+    "."        { return token_span{tk::op_dot{}, cur_span()}; }
 
-    "\\"        { return tk::kw_lambda{}; }
-    "lambda"    { return tk::kw_lambda{}; }
-    "let"       { return tk::kw_let{}; }
-    "in"        { return tk::kw_in{}; }
-    "if"        { return tk::kw_if{}; }
-    "then"      { return tk::kw_then{}; }
-    "else"      { return tk::kw_else{}; }
-    "bool"      { return tk::kw_bool{}; }
-    "true"      { return tk::kw_true{}; }
-    "false"     { return tk::kw_false{}; }
-    "int"       { return tk::kw_int{}; }
-    "string"    { return tk::kw_string{}; }
-    "fix"       { return tk::kw_fix{}; }
+    "\\"        { return token_span{tk::kw_lambda{}, cur_span()}; }
+    "lambda"    { return token_span{tk::kw_lambda{}, cur_span()}; }
+    "let"       { return token_span{tk::kw_let{}, cur_span()}; }
+    "in"        { return token_span{tk::kw_in{}, cur_span()}; }
+    "if"        { return token_span{tk::kw_if{}, cur_span()}; }
+    "then"      { return token_span{tk::kw_then{}, cur_span()}; }
+    "else"      { return token_span{tk::kw_else{}, cur_span()}; }
+    "bool"      { return token_span{tk::kw_bool{}, cur_span()}; }
+    "true"      { return token_span{tk::kw_true{}, cur_span()}; }
+    "false"     { return token_span{tk::kw_false{}, cur_span()}; }
+    "int"       { return token_span{tk::kw_int{}, cur_span()}; }
+    "string"    { return token_span{tk::kw_string{}, cur_span()}; }
+    "fix"       { return token_span{tk::kw_fix{}, cur_span()}; }
 
-    id         { return tk::id{.name = lexeme()}; }
-    number     { return tk::li_int{.value = lexeme()}; }
+    id         { return token_span{tk::id{.name = lexeme()}, cur_span()}; }
+    number     { return token_span{tk::li_int{.value = lexeme()}, cur_span()}; }
     string     {
-      return tk::li_str{
-        .raw = std::string_view{tok_ + 1, static_cast<size_t>(cur_ - tok_ -2)}
+      return token_span{
+        tk::li_str{.raw = std::string_view{tok_ + 1, static_cast<size_t>(cur_ - tok_ -2)}},
+        cur_span()
       };
     }
 
-    str_err    { return std::unexpected{lex_err_unknown{}}; }
-    glued_err  { return std::unexpected{lex_err_unknown{}}; }
+    str_err    { return std::unexpected{lex_err_str{.loc = cur_span()}}; }
+    glued_err  { return std::unexpected{lex_err_glued{.loc = cur_span()}}; }
     ws         { continue; }
     comment    { continue; }
   */

@@ -66,3 +66,38 @@ integer       ::= [0-9]+
 - The `fix` operand must be a lambda whose body is a lambda (a "function generator").
 - `fix` is a reserved word.
 - Application requires a function in function position and an argument of the parameter type; both are rejected when known to be wrong.
+
+### Diagnostics
+
+Compilation errors are reported fail-fast, one at a time, in a clang-style format. The position is computed from byte offsets (1-based line and column):
+
+```
+bad.luca:2:3: error: cannot pass value of type 'bool' to parameter of type 'int'
+  f true
+    ^~~~
+hint: pass an argument of the parameter type
+```
+
+Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (type) errors.
+
+| Code | Meaning |
+|------|---------|
+| A001 | unexpected character |
+| A002 | unterminated string literal |
+| A003 | identifier starting with a digit |
+| B001 | unexpected token in expression position |
+| B002 | expected a type |
+| B003 | expected an identifier after `\` |
+| B004 | expected an identifier after `let` |
+| B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`) |
+| B006 | unexpected end of input |
+| B007 | `fix` operand is not a lambda whose body is a lambda |
+| C001 | unbound identifier |
+| C002 | applying a value that is not a function |
+| C003 | argument/parameter type mismatch in an application |
+| C004 | `if` condition is not `bool` |
+| C005 | `if` branches have different types |
+| C006 | cannot infer the type of a `let` bound expression |
+| C007 | `fix` generator does not satisfy the fixpoint condition `τ = σ` |
+| C008 | operator applied to a non-`int` operand |
+| C009 | top-level expression has a function type |
