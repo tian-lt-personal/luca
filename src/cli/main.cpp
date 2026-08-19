@@ -12,6 +12,29 @@
 #include <mp.hpp>
 #include <parser.hpp>
 
+namespace {
+
+void print_value(const value& v) {
+  std::visit(overloaded{
+                 [](int val) { std::cout << val; },
+                 [](bool val) { std::cout << (val ? "true" : "false"); },
+                 [](std::monostate) { std::cout << "()"; },
+                 [](tuple_value* t) {
+                   std::cout << '{';
+                   for (size_t i = 0; i < t->fields.size(); ++i) {
+                     if (i) std::cout << ", ";
+                     std::cout << t->names[i] << " = ";
+                     print_value(t->fields[i]);
+                   }
+                   std::cout << '}';
+                 },
+                 [](const closure*) {},  // functions are never printed
+             },
+             v);
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
   CLI::App app{"LUCA — a minifunctional language"};
   std::string file;
@@ -37,14 +60,9 @@ int main(int argc, char** argv) {
     if (dump_mode) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {
-      auto v = eval(result.first);
-      std::visit(overloaded{
-                     [](int val) { std::cout << val << '\n'; },
-                     [](bool val) { std::cout << (val ? "true" : "false") << '\n'; },
-                     [](std::monostate) { std::cout << "()\n"; },
-                     [](auto) {},
-                 },
-                 v);
+      auto evaluated = eval(result.first);
+      print_value(evaluated.v);
+      std::cout << '\n';
     }
   } catch (const parse_err& e) {
     std::cerr << render(e.diag, source, file) << '\n';

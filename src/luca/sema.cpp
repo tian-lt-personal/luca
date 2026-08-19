@@ -66,6 +66,23 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
             if (!arrow || !same_type(*arrow->from, *arrow->to)) return std::nullopt;
             return ast::type{*arrow->from};
           },
+          [&](const ast::tup& t) -> std::optional<ast::type> {
+            ast::type_rec rec;
+            for (const auto& f : t.fields) {
+              auto fty =
+                  f.ann ? std::optional<ast::type>{*f.ann} : type_of_impl(*f.value, param_types, binding_types, ctx);
+              if (!fty.has_value()) return std::nullopt;
+              rec.fields.push_back(ast::rec_field{f.name, make_type(ctx, *std::move(fty))});
+            }
+            return ast::type{std::move(rec)};
+          },
+          [&](const ast::field& f) -> std::optional<ast::type> {
+            auto base_ty = type_of_impl(*f.base, param_types, binding_types, ctx);
+            if (!base_ty.has_value()) return std::nullopt;
+            auto* rec = std::get_if<ast::type_rec>(&*base_ty);
+            if (!rec || f.index >= rec->fields.size()) return std::nullopt;
+            return std::optional<ast::type>{*rec->fields[f.index].ty};
+          },
           [](const auto&) -> std::optional<ast::type> { return std::nullopt; },
       },
       t);
@@ -77,6 +94,13 @@ bool same_type(const ast::type& a, const ast::type& b) noexcept {
   if (a.index() != b.index()) return false;
   if (const auto *la = std::get_if<ast::type_arrow>(&a), *ra = std::get_if<ast::type_arrow>(&b); la && ra)
     return same_type(*la->from, *ra->from) && same_type(*la->to, *ra->to);
+  if (const auto *la = std::get_if<ast::type_rec>(&a), *ra = std::get_if<ast::type_rec>(&b); la && ra) {
+    if (la->name != ra->name) return false;  // nominal: named-vs-anonymous and different names both fail
+    if (!la->name.empty()) return true;      // same declared name → same type
+    if (la->fields.size() != ra->fields.size()) return false;
+    for (size_t i = 0; i < la->fields.size(); ++i)
+      if (la->fields[i].name != ra->fields[i].name || !same_type(*la->fields[i].ty, *ra->fields[i].ty)) return false;
+  }
   return true;
 }
 

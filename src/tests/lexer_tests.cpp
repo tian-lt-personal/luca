@@ -49,7 +49,8 @@ INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
                                            test_case{.source = "false", .expected = tk::kw_false{}},
                                            test_case{.source = "int", .expected = tk::kw_int{}},
                                            test_case{.source = "string", .expected = tk::kw_string{}},
-                                           test_case{.source = "fix", .expected = tk::kw_fix{}}));
+                                           test_case{.source = "fix", .expected = tk::kw_fix{}},
+                                           test_case{.source = "type", .expected = tk::kw_type{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
@@ -156,7 +157,8 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = ">", .expected = tk::op_gt{}}, test_case{.source = "<", .expected = tk::op_lt{}},
         test_case{.source = ":", .expected = tk::op_colon{}}, test_case{.source = "->", .expected = tk::op_arrow{}},
         test_case{.source = ".", .expected = tk::op_dot{}}, test_case{.source = ",", .expected = tk::op_comma{}},
-        test_case{.source = "(", .expected = tk::lparen{}}, test_case{.source = ")", .expected = tk::rparen{}}));
+        test_case{.source = "(", .expected = tk::lparen{}}, test_case{.source = ")", .expected = tk::rparen{}},
+        test_case{.source = "{", .expected = tk::lbrace{}}, test_case{.source = "}", .expected = tk::rbrace{}}));
 INSTANTIATE_TEST_SUITE_P(
     comment_tokens, lexer_theory,
     ::testing::Values(test_case{.source = "// this is a comment", .expected = std::unexpected{lex_err_eof{}}},

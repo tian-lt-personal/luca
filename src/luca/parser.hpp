@@ -7,7 +7,9 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <variant>
+#include <vector>
 // luca
 #include "diag.hpp"
 #include "lexer.hpp"
@@ -23,7 +25,15 @@ struct type_arrow {
   type* from;
   type* to;
 };
-struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arrow> {};
+struct rec_field {
+  std::string name;
+  const ast::type* ty;
+};
+struct type_rec {
+  std::string name;               // "" = anonymous
+  std::vector<rec_field> fields;  // {x:int, y:bool}
+};
+struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arrow, type_rec> {};
 
 struct term;
 struct var {
@@ -56,7 +66,20 @@ struct ifexpr {
 struct fix {
   term* body;
 };
-struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool> {};
+// tuple literals persist in the AST (unlike tokens), so names are owning
+struct tup_field {
+  std::string name;
+  const ast::type* ann;  // explicit field annotation; nullptr = infer
+  ast::term* value;
+};
+struct tup {
+  std::vector<tup_field> fields;
+};
+struct field {
+  ast::term* base;
+  size_t index;  // resolved against the record type at parse time
+};
+struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, tup, field> {};
 
 struct context {
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
