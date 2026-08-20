@@ -72,9 +72,11 @@ TEST(machine_tests, shadowing) {
 
 // -- let expressions ----------------------------------------------------------
 
-TEST(machine_tests, let_simple) { EXPECT_EQ(std::get<int>(eval_ok("let x = 5 in x").v), 5); }
-TEST(machine_tests, let_arithmetic) { EXPECT_EQ(std::get<int>(eval_ok("let x = 3 in x + 7").v), 10); }
-TEST(machine_tests, let_nested) { EXPECT_EQ(std::get<int>(eval_ok("let x = 3 in let y = 4 in x * y").v), 12); }
+TEST(machine_tests, let_simple) { EXPECT_EQ(std::get<int>(eval_ok("let x : int = 5 in x").v), 5); }
+TEST(machine_tests, let_arithmetic) { EXPECT_EQ(std::get<int>(eval_ok("let x : int = 3 in x + 7").v), 10); }
+TEST(machine_tests, let_nested) {
+  EXPECT_EQ(std::get<int>(eval_ok("let x : int = 3 in let y : int = 4 in x * y").v), 12);
+}
 
 TEST(machine_tests, let_with_function) {
   EXPECT_EQ(std::get<int>(eval_ok("(\\f : int -> int . f 5) (\\x : int . x + 1)").v), 6);
@@ -101,10 +103,10 @@ TEST(machine_tests, fix_factorial) {
 }
 
 TEST(machine_tests, fix_via_let) {
-  EXPECT_EQ(
-      std::get<int>(
-          eval_ok("let fact = fix (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 6").v),
-      720);
+  EXPECT_EQ(std::get<int>(eval_ok("let fact : int -> int = "
+                                  "fix (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 6")
+                              .v),
+            720);
 }
 
 TEST(machine_tests, fix_two_args) {
@@ -117,11 +119,12 @@ TEST(machine_tests, fix_two_args) {
 
 TEST(machine_tests, fix_y_combinator) {
   // a monomorphic Y combinator over int -> int functions, expressed with fix
-  EXPECT_EQ(std::get<int>(
-                eval_ok("let y = fix (\\y : ((int -> int) -> (int -> int)) -> (int -> int) . "
-                        "\\f : (int -> int) -> (int -> int) . \\n : int . f (y f) n) in "
-                        "let fact = y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10")
-                    .v),
+  EXPECT_EQ(std::get<int>(eval_ok("let y : ((int -> int) -> (int -> int)) -> (int -> int) = "
+                                  "fix (\\y : ((int -> int) -> (int -> int)) -> (int -> int) . "
+                                  "\\f : (int -> int) -> (int -> int) . \\n : int . f (y f) n) in "
+                                  "let fact : int -> int = "
+                                  "y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10")
+                              .v),
             3628800);
 }
 
@@ -138,7 +141,9 @@ TEST(machine_tests, record_field_access) {
 }
 
 TEST(machine_tests, record_field_chain) {
-  EXPECT_EQ(std::get<int>(eval_ok("let f = \\p : {a:{b:int}} . p.a.b in f {a:{b:int} = {b:int = 7}}").v), 7);
+  EXPECT_EQ(
+      std::get<int>(eval_ok("let f : {a:{b:int}} -> int = \\p : {a:{b:int}} . p.a.b in f {a:{b:int} = {b:int = 7}}").v),
+      7);
 }
 
 TEST(machine_tests, record_field_annotation_init) {
@@ -190,9 +195,10 @@ TEST(machine_tests, literal_initializes_named_record_any_order) {
             1);
 }
 
-TEST(machine_tests, nested_literal_lift_without_annotation) {
+TEST(machine_tests, nested_literal_lift) {
+  // a literal field annotated with a declared type lifts its nested literal
   EXPECT_EQ(std::get<int>(eval_ok("type point = {x:int, y:bool}\n"
-                                  "(\\r : {p:point} . r.p.x) {p = {y:bool = true, x:int = 1}}")
+                                  "(\\r : {p:point} . r.p.x) {p:point = {y:bool = true, x:int = 1}}")
                               .v),
             1);
 }

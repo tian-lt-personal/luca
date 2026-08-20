@@ -84,10 +84,7 @@ void to_json(nlohmann::json& j, const ast::tup& t) {
   for (const auto& f : t.fields) {
     nlohmann::json fj;
     fj["name"] = f.name;
-    if (f.ann)
-      to_json(fj["ann"], *f.ann);
-    else
-      fj["ann"] = nullptr;
+    to_json(fj["ann"], f.ann);
     to_json(fj["value"], *f.value);
     j["tup"]["fields"].push_back(std::move(fj));
   }

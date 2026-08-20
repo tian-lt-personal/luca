@@ -186,7 +186,7 @@ TEST(parser_tests, comparison_as_if_cond) {
 // -- let-in expressions -------------------------------------------------------
 
 TEST(parser_tests, let_simple) {
-  auto r = parse_ok("let x = 1 in x");
+  auto r = parse_ok("let x : int = 1 in x");
   // desugars to (\x : int . x) 1
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.func);
@@ -196,7 +196,7 @@ TEST(parser_tests, let_simple) {
 }
 
 TEST(parser_tests, let_with_binop_body) {
-  auto r = parse_ok("let x = 1 in x + x");
+  auto r = parse_ok("let x : int = 1 in x + x");
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.func);
   EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
@@ -205,7 +205,7 @@ TEST(parser_tests, let_with_binop_body) {
 }
 
 TEST(parser_tests, let_nested) {
-  auto r = parse_ok("let x = 1 in let y = 2 in x + y");
+  auto r = parse_ok("let x : int = 1 in let y : int = 2 in x + y");
   // desugars to: (\x:int. (\y:int. x + y) 2) 1
   const auto& outer_app = as<ast::appl>(r.first);
   const auto& outer_abst = as<ast::abst>(*outer_app.func);
@@ -222,7 +222,7 @@ TEST(parser_tests, let_nested) {
 }
 
 TEST(parser_tests, let_bool_bound) {
-  auto r = parse_ok("let x = true in if x then 1 else 0");
+  auto r = parse_ok("let x : bool = true in if x then 1 else 0");
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.func);
   EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
@@ -389,7 +389,7 @@ TEST(parser_tests, lambda_bool_param) {
 }
 
 TEST(parser_tests, lambda_string_param) {
-  auto r = parse_ok("let f = \\x : string . 0 in 1");
+  auto r = parse_ok("let f : string -> int = \\x : string . 0 in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.arg);
   EXPECT_TRUE(std::holds_alternative<ast::type_string>(ab.param_type));
@@ -397,7 +397,7 @@ TEST(parser_tests, lambda_string_param) {
 }
 
 TEST(parser_tests, lambda_unit_param) {
-  auto r = parse_ok("let f = \\x : () . 42 in 1");
+  auto r = parse_ok("let f : () -> int = \\x : () . 42 in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.arg);
   EXPECT_TRUE(std::holds_alternative<ast::type_unit>(ab.param_type));
@@ -566,7 +566,7 @@ TEST(parser_tests, fix_application_argument) {
 }
 
 TEST(parser_tests, fix_in_let) {
-  auto r = parse_ok("let fact = fix (\\f : int -> int . \\n : int . n * f (n - 1)) in fact 5");
+  auto r = parse_ok("let fact : int -> int = fix (\\f : int -> int . \\n : int . n * f (n - 1)) in fact 5");
   const auto& a = as<ast::appl>(r.first);
   EXPECT_TRUE(is<ast::fix>(*a.arg));
 }
@@ -583,7 +583,7 @@ TEST(parser_tests, strict_app_known_wrong) {
 // -- record types -------------------------------------------------------------
 
 TEST(parser_tests, anonymous_record_type_annotation) {
-  auto r = parse_ok("let f = \\p : {x:int, y:bool} . 1 in 2");
+  auto r = parse_ok("let f : {x:int, y:bool} -> int = \\p : {x:int, y:bool} . 1 in 2");
   const auto& a = as<ast::appl>(r.first);
   const auto& rec = std::get<ast::type_rec>(as<ast::abst>(*a.arg).param_type);
   EXPECT_TRUE(rec.name.empty());
@@ -595,7 +595,7 @@ TEST(parser_tests, anonymous_record_type_annotation) {
 }
 
 TEST(parser_tests, named_record_type_expands) {
-  auto r = parse_ok("type point = {x:int, y:bool}\nlet f = \\p : point . 1 in 2");
+  auto r = parse_ok("type point = {x:int, y:bool}\nlet f : point -> int = \\p : point . 1 in 2");
   const auto& a = as<ast::appl>(r.first);
   const auto& rec = std::get<ast::type_rec>(as<ast::abst>(*a.arg).param_type);
   EXPECT_EQ(rec.name, "point");
@@ -603,7 +603,7 @@ TEST(parser_tests, named_record_type_expands) {
 }
 
 TEST(parser_tests, record_type_inside_arrow) {
-  auto r = parse_ok("let id = \\p : {x:int} . p in 1");
+  auto r = parse_ok("let id : {x:int} -> {x:int} = \\p : {x:int} . p in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& arrow = std::get<ast::type_arrow>(as<ast::abst>(*a.func).param_type);
   const auto& rec = std::get<ast::type_rec>(*arrow.from);
@@ -618,22 +618,14 @@ TEST(parser_tests, tuple_literal_annotated) {
   const auto& t = as<ast::tup>(r.first);
   ASSERT_EQ(t.fields.size(), 2);
   EXPECT_EQ(t.fields[0].name, "x");
-  ASSERT_NE(t.fields[0].ann, nullptr);
-  EXPECT_TRUE(std::holds_alternative<ast::type_int>(*t.fields[0].ann));
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
   EXPECT_EQ(as<ast::li_int>(*t.fields[0].value).value, 1);
   EXPECT_EQ(t.fields[1].name, "y");
-  ASSERT_NE(t.fields[1].ann, nullptr);
-  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*t.fields[1].ann));
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(t.fields[1].ann));
   EXPECT_EQ(as<ast::li_bool>(*t.fields[1].value).value, true);
 }
 
-TEST(parser_tests, tuple_literal_inferred) {
-  auto r = parse_ok("{x = 1, y = true}");
-  const auto& t = as<ast::tup>(r.first);
-  ASSERT_EQ(t.fields.size(), 2);
-  EXPECT_EQ(t.fields[0].ann, nullptr);
-  EXPECT_EQ(as<ast::li_int>(*t.fields[0].value).value, 1);
-}
+TEST(parser_tests, tuple_field_requires_annotation) { EXPECT_THROW(parse("{x = 1}"), parse_err); }
 
 TEST(parser_tests, field_access_resolves_index) {
   auto r = parse_ok("(\\p : {x:int, y:bool} . p.y) {x:int = 1, y:bool = true}");
@@ -644,7 +636,7 @@ TEST(parser_tests, field_access_resolves_index) {
 }
 
 TEST(parser_tests, field_access_chain) {
-  auto r = parse_ok("let f = \\p : {a:{b:int}} . p.a.b in 1");
+  auto r = parse_ok("let f : {a:{b:int}} -> int = \\p : {a:{b:int}} . p.a.b in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& f2 = as<ast::field>(*as<ast::abst>(*a.arg).body);
   EXPECT_EQ(f2.index, 0);
@@ -653,7 +645,7 @@ TEST(parser_tests, field_access_chain) {
 }
 
 TEST(parser_tests, dot_binds_tighter_than_application) {
-  auto r = parse_ok("let g = \\f : int -> int . \\q : {x:int} . f q.x in 1");
+  auto r = parse_ok("let g : (int -> int) -> {x:int} -> int = \\f : int -> int . \\q : {x:int} . f q.x in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& g = as<ast::abst>(*a.arg);
   const auto& body = as<ast::appl>(*as<ast::abst>(*g.body).body);
@@ -697,7 +689,7 @@ INSTANTIATE_TEST_SUITE_P(if_expr, parser_error_theory,
                                            "if true then 1 else true"));
 
 INSTANTIATE_TEST_SUITE_P(let_expr, parser_error_theory,
-                         ::testing::Values("let x = f y in x", "let 1 = 2 in 3", "let x = 1 2"));
+                         ::testing::Values("let x : int = f y in x", "let 1 = 2 in 3", "let x : int = 1 2 in x"));
 
 INSTANTIATE_TEST_SUITE_P(fix, parser_error_theory,
                          ::testing::Values("fix 42", "fix (\\f : int . f)", "fix (\\f : int -> int . f)",
@@ -731,18 +723,19 @@ INSTANTIATE_TEST_SUITE_P(
         std::pair{"type a\n1", "B009"}, std::pair{"type a = 42\n1", "B009"}, std::pair{"\\p : {} . 1", "B008"},
         std::pair{"type a = {x:int}\ntype a = {y:int}\n1", "C010"}, std::pair{"\\p : point . 1", "C011"},
         std::pair{"\\p : {x} . 1", "B005"}, std::pair{"type a = {x:int, x:bool}\n1", "C014"}, std::pair{"{}", "B008"},
-        std::pair{"{1}", "B005"}, std::pair{"{x = 1, x = 2}", "C014"}, std::pair{"{x:int = true}", "C015"},
+        std::pair{"{1}", "B005"}, std::pair{"{x:int = 1, x:bool = 2}", "C014"}, std::pair{"{x:int = true}", "C015"},
         std::pair{"42.x", "C012"}, std::pair{"(\\p : {x:int} . p.z) {x:int = 1}", "C013"},
         std::pair{"{x:int = 1} + 1", "C008"},
         std::pair{"type point = {x:int, y:bool}\n(\\p : point . p.x) {x:int = 1, y:bool = true, z:int = 0}", "C015"},
         std::pair{"type point = {x:int, y:bool}\n(\\p : point . p.x) {x:bool = true, y:bool = false}", "C015"},
-        std::pair{"type point = {x:int, y:bool}\nlet q = {x:int = 1, y:bool = false} in "
+        std::pair{"type point = {x:int, y:bool}\nlet q : {x:int, y:bool} = {x:int = 1, y:bool = false} in "
                   "(\\p : point . p.x) q",
                   "C003"},
         std::pair{"type point = {x:int, y:bool}\nlet p:point = 42 in p", "C015"},
         std::pair{"type point = {x:int, y:bool}\nlet p:point = {x:bool = true, y:bool = false} in p", "C015"},
         std::pair{"let {a, b} = 42 in a", "C016"}, std::pair{"let {a} = {x:int = 1, y:bool = true} in a", "C017"},
-        std::pair{"let {a, a} = {x:int = 1, y:bool = true} in a", "C018"}));
+        std::pair{"let {a, a} = {x:int = 1, y:bool = true} in a", "C018"}, std::pair{"let x = 1 in x", "B005"},
+        std::pair{"{x = 1}", "B005"}));
 
 TEST(parser_tests, diag_position_multiline) {
   try {
@@ -772,11 +765,11 @@ TEST(parser_tests, diag_position_eof) {
 TEST(parser_tests, diag_position_arg_mismatch) {
   // "true" is on line 2, columns 3-6; the caret underlines it
   try {
-    parse("let f = \\x : int . x + 1 in\nf true");
+    parse("let f : int -> int = \\x : int . x + 1 in\nf true");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C003");
-    EXPECT_EQ(e.diag.loc, (src_range{30, 34}));
+    EXPECT_EQ(e.diag.loc, (src_range{43, 47}));
   }
 }
 

@@ -224,9 +224,7 @@ class parser {
           break;
         }
       if (!lf) return std::nullopt;
-      auto actual = lf->ann ? std::optional<ast::type>{*lf->ann} : sema_.type_of(*lf->value);
-      if (!actual.has_value()) return std::nullopt;
-      if (!same_type(*ef.ty, *actual)) {
+      if (!same_type(*ef.ty, lf->ann)) {
         auto nested = lift_to(*lf->value, *ef.ty);
         if (!nested.has_value()) return std::nullopt;
         rebuilt.fields.push_back(ast::tup_field{lf->name, lf->ann, make_term(actx_, std::move(*nested))});
@@ -394,32 +392,30 @@ class parser {
       auto name = id->name;
       auto name_loc = curtok_->loc;
       advance();
-      const ast::type* ann = nullptr;
-      if (curtok_.has_value() && std::holds_alternative<tk::op_colon>(curtok_->t)) {
-        advance();
-        auto ty = parse_type();
-        ann = make_type(actx_, std::move(ty));
-      }
+      if (!curtok_.has_value() || !std::holds_alternative<tk::op_colon>(curtok_->t))
+        fail({curtok_.has_value() ? curtok_->loc : err_loc(curtok_.error()), "B005",
+              "expected ':' after the field name, found " + found_text(curtok_),
+              "write {name : type = value, ...} (field types are required)"});
+      advance();
+      auto ann = parse_type();
       expect<tk::op_eq>("'='");
       auto value = parse_expr(0);
       for (const auto& f : tup.fields)
         if (f.name == name)
           fail({name_loc, "C014", "duplicate field '" + std::string{name} + "' in a tuple literal",
                 "use a different name"});
-      if (ann) {
-        auto actual = sema_.type_of(value.term);
-        if (actual.has_value() && !same_type(*ann, *actual)) {
-          auto lifted = lift_to(value.term, *ann);
-          if (lifted.has_value())
-            value.term = std::move(*lifted);
-          else
-            fail({value.loc, "C015",
-                  "field '" + std::string{name} + "' of type '" + type_name(*ann) +
-                      "' cannot be initialized with a value of type '" + type_name(*actual) + "'",
-                  "match the value with the field's declared type"});
-        }
+      auto actual = sema_.type_of(value.term);
+      if (actual.has_value() && !same_type(ann, *actual)) {
+        auto lifted = lift_to(value.term, ann);
+        if (lifted.has_value())
+          value.term = std::move(*lifted);
+        else
+          fail({value.loc, "C015",
+                "field '" + std::string{name} + "' of type '" + type_name(ann) +
+                    "' cannot be initialized with a value of type '" + type_name(*actual) + "'",
+                "match the value with the field's declared type"});
       }
-      tup.fields.push_back(ast::tup_field{std::string{name}, ann, make_term(actx_, std::move(value.term))});
+      tup.fields.push_back(ast::tup_field{std::string{name}, std::move(ann), make_term(actx_, std::move(value.term))});
       if (curtok_.has_value() && std::holds_alternative<tk::op_comma>(curtok_->t)) {
         advance();
         continue;
@@ -534,46 +530,38 @@ class parser {
     auto* id = std::get_if<tk::id>(&peek());
     if (!id)
       fail({curtok_->loc, "B004", "expected an identifier after 'let', found " + found_text(curtok_),
-            "write let name = expr in body"});
+            "write let name : type = expr in body"});
     auto name = id->name;
     advance();
 
-    const ast::type* ann = nullptr;
-    if (curtok_.has_value() && std::holds_alternative<tk::op_colon>(curtok_->t)) {
-      advance();
-      auto ty = parse_type();
-      ann = make_type(actx_, std::move(ty));
-    }
+    // the binding type is always written; the bound expression is only checked against it
+    if (!curtok_.has_value() || !std::holds_alternative<tk::op_colon>(curtok_->t))
+      fail({curtok_.has_value() ? curtok_->loc : err_loc(curtok_.error()), "B005",
+            "expected ':' after the bound name, found " + found_text(curtok_),
+            "write let name : type = expr in body (let requires a type annotation)"});
+    advance();
+    auto ann = parse_type();
 
     expect<tk::op_eq>("'='");
     auto bound_expr = parse_expr(0);
-    std::optional<ast::type> bound_ty;
-    if (ann) {
-      auto ty = sema_.type_of(bound_expr.term);
-      if (ty.has_value() && !same_type(*ann, *ty)) {
-        auto lifted = lift_to(bound_expr.term, *ann);
-        if (lifted.has_value())
-          bound_expr.term = std::move(*lifted);
-        else
-          fail({bound_expr.loc, "C015",
-                "cannot initialize '" + type_name(*ann) + "' with a value of type '" + type_name(*ty) + "'",
-                "the value must have the annotated type"});
-      }
-      bound_ty = *ann;
-    } else {
-      bound_ty = sema_.type_of(bound_expr.term);
-      if (!bound_ty.has_value())
-        fail({bound_expr.loc, "C006", "cannot infer the type of the bound expression",
-              "check for unbound identifiers inside"});
+    auto ty = sema_.type_of(bound_expr.term);
+    if (ty.has_value() && !same_type(ann, *ty)) {
+      auto lifted = lift_to(bound_expr.term, ann);
+      if (lifted.has_value())
+        bound_expr.term = std::move(*lifted);
+      else
+        fail({bound_expr.loc, "C015",
+              "cannot initialize '" + type_name(ann) + "' with a value of type '" + type_name(*ty) + "'",
+              "the value must have the annotated type"});
     }
 
     expect<tk::kw_in>("'in'");
-    sema_.push_binding(name, *bound_ty);
+    sema_.push_binding(name, ann);
     auto body = parse_expr(0);
     sema_.pop_binding();
 
     return {ast::term{ast::appl{
-                .func = make_term(actx_, ast::term{ast::abst{.param_type = *std::move(bound_ty),
+                .func = make_term(actx_, ast::term{ast::abst{.param_type = std::move(ann),
                                                              .body = make_term(actx_, std::move(body.term))}}),
                 .arg = make_term(actx_, std::move(bound_expr.term))}},
             {start.begin, body.loc.end}};
@@ -606,13 +594,11 @@ class parser {
     }
     expect<tk::op_eq>("'='");
     auto bound_expr = parse_expr(0);
-    auto bound_ty = sema_.type_of(bound_expr.term);
-    if (!bound_ty.has_value())
-      fail({bound_expr.loc, "C006", "cannot infer the type of the bound expression",
-            "check for unbound identifiers inside"});
-    auto* rec = std::get_if<ast::type_rec>(&*bound_ty);
+    // type_of cannot fail here: every failure mode is rejected earlier during parsing
+    auto bound_ty = *sema_.type_of(bound_expr.term);
+    auto* rec = std::get_if<ast::type_rec>(&bound_ty);
     if (!rec)
-      fail({bound_expr.loc, "C016", "cannot bind names from a value of type '" + type_name(*bound_ty) + "'",
+      fail({bound_expr.loc, "C016", "cannot bind names from a value of type '" + type_name(bound_ty) + "'",
             "structured binding requires a record value"});
     if (rec->fields.size() != names.size())
       fail({bound_expr.loc, "C017",
@@ -623,7 +609,7 @@ class parser {
     expect<tk::kw_in>("'in'");
     // bindings: [$t, a, b]; the k-th field access is the arg of the (k+1)-th lambda,
     // evaluated with k binders above $t, so its de Bruijn index is k
-    sema_.push_binding("$t", *bound_ty);
+    sema_.push_binding("$t", bound_ty);
     std::vector<ast::term> field_terms;
     field_terms.reserve(names.size());
     for (size_t k = 0; k < names.size(); ++k) {
@@ -642,7 +628,7 @@ class parser {
                                                                  .body = make_term(actx_, std::move(inner))}}),
                     .arg = make_term(actx_, std::move(field_terms[k]))}};
     return {
-        ast::term{ast::appl{.func = make_term(actx_, ast::term{ast::abst{.param_type = *bound_ty,
+        ast::term{ast::appl{.func = make_term(actx_, ast::term{ast::abst{.param_type = std::move(bound_ty),
                                                                          .body = make_term(actx_, std::move(inner))}}),
                             .arg = make_term(actx_, std::move(bound_expr.term))}},
         {start.begin, body.loc.end}};

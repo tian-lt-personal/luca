@@ -66,10 +66,10 @@ struct ifexpr {
 struct fix {
   term* body;
 };
-// tuple literals persist in the AST (unlike tokens), so names are owning
+// tuple literals persist in the AST (unlike tokens), so names are owning.
 struct tup_field {
   std::string name;
-  const ast::type* ann;  // explicit field annotation; nullptr = infer
+  ast::type ann;
   ast::term* value;
 };
 struct tup {

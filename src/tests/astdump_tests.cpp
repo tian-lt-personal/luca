@@ -22,20 +22,20 @@ auto parse_ok(const std::string& src) {
 namespace tests {
 
 TEST(astdump_tests, tuple_literal) {
-  auto r = parse_ok("{x:int = 1, y = true}");
+  auto r = parse_ok("{x:int = 1, y:bool = true}");
   auto j = dump(r.first);
   EXPECT_EQ(j, nlohmann::json::parse(
                    R"({"tup":{"fields":[{"name":"x","ann":{"int":{}},"value":{"li_int":{"value":1}}},)"
-                   R"({"name":"y","ann":null,"value":{"li_bool":{"value":true}}}]}})"));
+                   R"({"name":"y","ann":{"bool":{}},"value":{"li_bool":{"value":true}}}]}})"));
 }
 TEST(astdump_tests, field_access) {
-  auto r = parse_ok("let f = \\p : {x:int} . p.x in 1");
+  auto r = parse_ok("let f : {x:int} -> int = \\p : {x:int} . p.x in 1");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["body"],
             nlohmann::json::parse(R"({"field":{"base":{"var":{"index":0}},"index":0}})"));
 }
 TEST(astdump_tests, record_type_dump) {
-  auto r = parse_ok("type point = {x:int, y:bool}\nlet f = \\p : point . 1 in 2");
+  auto r = parse_ok("type point = {x:int, y:bool}\nlet f : point -> int = \\p : point . 1 in 2");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"],
             nlohmann::json::parse(
@@ -141,7 +141,7 @@ TEST(astdump_tests, lambda_bool) {
   EXPECT_EQ(ab["body"], nlohmann::json::parse(R"({"li_bool":{"value":true}})"));
 }
 TEST(astdump_tests, lambda_unit) {
-  auto r = parse_ok("let f = \\x : () . 42 in 1");
+  auto r = parse_ok("let f : () -> int = \\x : () . 42 in 1");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"], nlohmann::json::parse(R"({"unit":{}})"));
 }
@@ -265,9 +265,11 @@ TEST(astdump_tests, full_json_output) {
 
 TEST(astdump_tests, full_json_output_y_combinator) {
   auto r = parse_ok(
-      "let y = fix (\\y : ((int -> int) -> (int -> int)) -> (int -> int) . "
+      "let y : ((int -> int) -> (int -> int)) -> (int -> int) = "
+      "fix (\\y : ((int -> int) -> (int -> int)) -> (int -> int) . "
       "\\f : (int -> int) -> (int -> int) . \\n : int . f (y f) n) in "
-      "let fact = y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10");
+      "let fact : int -> int = "
+      "y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10");
   auto j = dump(r.first);
   auto expected = nlohmann::json::parse(R"(
     {
@@ -412,7 +414,7 @@ TEST(astdump_tests, fix_node) {
 }
 
 TEST(astdump_tests, let_simple) {
-  auto r = parse_ok("let x = 1 in x");
+  auto r = parse_ok("let x : int = 1 in x");
   auto j = dump(r.first);
   auto expected = nlohmann::json::parse(R"(
     {
@@ -431,7 +433,7 @@ TEST(astdump_tests, let_simple) {
 }
 
 TEST(astdump_tests, let_chain) {
-  auto r = parse_ok("(\\g : int -> int . let x = 1 in let y = 2 in (g x) + y) (\\a : int . a)");
+  auto r = parse_ok("(\\g : int -> int . let x : int = 1 in let y : int = 2 in (g x) + y) (\\a : int . a)");
   // desugars to: (\g:int->int. (\x:int. (\y:int. (g x) + y) 2) 1) (\a:int. a)
   // g = index 2, x = index 1, y = index 0
   auto j = dump(r.first);

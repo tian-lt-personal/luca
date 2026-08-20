@@ -9,15 +9,16 @@ type point = {x:int, y:int}
 type segment = {a:point, b:point}
 
 let origin : point = {x:int = 0, y:int = 0} in          // annotated let + literal init
-let move = \p : point . \dx : int . \dy : int .         // record as argument,
-  {x:int = p.x + dx, y:int = p.y + dy} in               // anonymous record as result
-let p = move {y:int = 5, x:int = 3} 1 1 in              // reordered fields initialize point
+let move : point -> int -> int -> {x:int, y:int} =      // record as argument,
+  \p : point . \dx : int . \dy : int .                  // anonymous record as result
+  {x:int = p.x + dx, y:int = p.y + dy} in
+let p : {x:int, y:int} = move {y:int = 5, x:int = 3} 1 1 in  // reordered fields initialize point
 let diag : segment = {b:point = {x:int = 8, y:int = 6}, // nested init, b before a
                       a:point = origin} in
-let mid = \s : segment .                                // chained field access s.a.x
+let mid : segment -> {x:int, y:int} = \s : segment .    // chained field access s.a.x
   {x:int = (s.a.x + s.b.x) / 2, y:int = (s.a.y + s.b.y) / 2} in
 let {mx, my} = mid diag in                              // structured binding
 let {px, py} = p in
-let manhattan = (if mx > px then mx - px else px - mx) +
-                (if my > py then my - py else py - my) in
+let manhattan : int = (if mx > px then mx - px else px - mx) +
+                      (if my > py then my - py else py - my) in
 manhattan

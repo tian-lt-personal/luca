@@ -68,12 +68,7 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
           },
           [&](const ast::tup& t) -> std::optional<ast::type> {
             ast::type_rec rec;
-            for (const auto& f : t.fields) {
-              auto fty =
-                  f.ann ? std::optional<ast::type>{*f.ann} : type_of_impl(*f.value, param_types, binding_types, ctx);
-              if (!fty.has_value()) return std::nullopt;
-              rec.fields.push_back(ast::rec_field{f.name, make_type(ctx, *std::move(fty))});
-            }
+            for (const auto& f : t.fields) rec.fields.push_back(ast::rec_field{f.name, make_type(ctx, f.ann)});
             return ast::type{std::move(rec)};
           },
           [&](const ast::field& f) -> std::optional<ast::type> {
