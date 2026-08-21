@@ -625,7 +625,27 @@ TEST(parser_tests, tuple_literal_annotated) {
   EXPECT_EQ(as<ast::li_bool>(*t.fields[1].value).value, true);
 }
 
-TEST(parser_tests, tuple_field_requires_annotation) { EXPECT_THROW(parse("{x = 1}"), parse_err); }
+TEST(parser_tests, tuple_field_without_annotation) {
+  auto r = parse_ok("{x = 1}");
+  const auto& t = as<ast::tup>(r.first);
+  ASSERT_EQ(t.fields.size(), 1);
+  EXPECT_EQ(t.fields[0].name, "x");
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
+}
+
+TEST(parser_tests, tuple_field_mixed_annotations) {
+  auto r = parse_ok("{x = 1, y:bool = true}");
+  const auto& t = as<ast::tup>(r.first);
+  ASSERT_EQ(t.fields.size(), 2);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(t.fields[1].ann));
+}
+
+TEST(parser_tests, let_without_annotation) {
+  auto r = parse_ok("let x = 5 in x");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(as<ast::abst>(*a.func).param_type));
+}
 
 TEST(parser_tests, field_access_resolves_index) {
   auto r = parse_ok("(\\p : {x:int, y:bool} . p.y) {x:int = 1, y:bool = true}");
@@ -734,8 +754,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::pair{"type point = {x:int, y:bool}\nlet p:point = 42 in p", "C015"},
         std::pair{"type point = {x:int, y:bool}\nlet p:point = {x:bool = true, y:bool = false} in p", "C015"},
         std::pair{"let {a, b} = 42 in a", "C016"}, std::pair{"let {a} = {x:int = 1, y:bool = true} in a", "C017"},
-        std::pair{"let {a, a} = {x:int = 1, y:bool = true} in a", "C018"}, std::pair{"let x = 1 in x", "B005"},
-        std::pair{"{x = 1}", "B005"}));
+        std::pair{"let {a, a} = {x:int = 1, y:bool = true} in a", "C018"}));
 
 TEST(parser_tests, diag_position_multiline) {
   try {

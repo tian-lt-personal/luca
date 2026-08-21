@@ -252,4 +252,45 @@ TEST(machine_tests, annotated_let_literal_reordered) {
   EXPECT_EQ(std::get<int>(eval_ok("type point = {x:int, y:int}\nlet p:point = {y:int = 2, x:int = 1} in p.x").v), 1);
 }
 
+// -- inference: optional annotations ------------------------------------------
+
+TEST(machine_tests, let_without_annotation) { EXPECT_EQ(std::get<int>(eval_ok("let x = 5 in x + 1").v), 6); }
+
+TEST(machine_tests, let_without_annotation_function) {
+  EXPECT_EQ(std::get<int>(eval_ok("let f = \\x : int . x + 1 in f 5").v), 6);
+}
+
+TEST(machine_tests, let_record_inferred) {
+  EXPECT_EQ(std::get<bool>(eval_ok("let p = {x = 1, y = true} in p.y").v), true);
+}
+
+TEST(machine_tests, let_inferred_if) { EXPECT_EQ(std::get<int>(eval_ok("let x = if true then 1 else 2 in x").v), 1); }
+
+TEST(machine_tests, structured_binding_on_inferred_literal) {
+  EXPECT_EQ(std::get<int>(eval_ok("let {a, b} = {x = 1, y = 2} in a + b").v), 3);
+}
+
+TEST(machine_tests, literal_without_annotation_initializes_named_record) {
+  EXPECT_EQ(std::get<int>(eval_ok("type point = {x:int, y:bool}\n"
+                                  "(\\p : point . p.x) {y = true, x = 1}")
+                              .v),
+            1);
+}
+
+TEST(machine_tests, annotated_let_with_inferred_fields) {
+  EXPECT_EQ(std::get<int>(eval_ok("type point = {x:int, y:int}\n"
+                                  "let p:point = {x = 1, y = 2} in (\\p:point . p.x + p.y) p")
+                              .v),
+            3);
+}
+
+TEST(machine_tests, nested_literal_without_annotation) {
+  auto v = eval_ok("{a = {b = true}}");  // hold the result: the arena keeps the value alive
+  auto* tv = std::get<tuple_value*>(v.v);
+  ASSERT_EQ(tv->fields.size(), 1u);
+  auto* inner = std::get<tuple_value*>(tv->fields[0]);
+  EXPECT_EQ(inner->names[0], "b");
+  EXPECT_EQ(std::get<bool>(inner->fields[0]), true);
+}
+
 }  // namespace tests

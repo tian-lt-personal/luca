@@ -392,29 +392,32 @@ class parser {
       auto name = id->name;
       auto name_loc = curtok_->loc;
       advance();
-      if (!curtok_.has_value() || !std::holds_alternative<tk::op_colon>(curtok_->t))
-        fail({curtok_.has_value() ? curtok_->loc : err_loc(curtok_.error()), "B005",
-              "expected ':' after the field name, found " + found_text(curtok_),
-              "write {name : type = value, ...} (field types are required)"});
-      advance();
-      auto ann = parse_type();
+      ast::type ann;
+      bool annotated = false;
+      if (curtok_.has_value() && std::holds_alternative<tk::op_colon>(curtok_->t)) {
+        advance();
+        ann = parse_type();
+        annotated = true;
+      }
       expect<tk::op_eq>("'='");
       auto value = parse_expr(0);
       for (const auto& f : tup.fields)
         if (f.name == name)
           fail({name_loc, "C014", "duplicate field '" + std::string{name} + "' in a tuple literal",
                 "use a different name"});
-      auto actual = sema_.type_of(value.term);
-      if (actual.has_value() && !same_type(ann, *actual)) {
+      // type_of cannot fail here: every failure mode is rejected earlier during parsing
+      auto actual = *sema_.type_of(value.term);
+      if (annotated && !same_type(ann, actual)) {
         auto lifted = lift_to(value.term, ann);
         if (lifted.has_value())
           value.term = std::move(*lifted);
         else
           fail({value.loc, "C015",
                 "field '" + std::string{name} + "' of type '" + type_name(ann) +
-                    "' cannot be initialized with a value of type '" + type_name(*actual) + "'",
+                    "' cannot be initialized with a value of type '" + type_name(actual) + "'",
                 "match the value with the field's declared type"});
       }
+      if (!annotated) ann = std::move(actual);
       tup.fields.push_back(ast::tup_field{std::string{name}, std::move(ann), make_term(actx_, std::move(value.term))});
       if (curtok_.has_value() && std::holds_alternative<tk::op_comma>(curtok_->t)) {
         advance();
@@ -534,26 +537,29 @@ class parser {
     auto name = id->name;
     advance();
 
-    // the binding type is always written; the bound expression is only checked against it
-    if (!curtok_.has_value() || !std::holds_alternative<tk::op_colon>(curtok_->t))
-      fail({curtok_.has_value() ? curtok_->loc : err_loc(curtok_.error()), "B005",
-            "expected ':' after the bound name, found " + found_text(curtok_),
-            "write let name : type = expr in body (let requires a type annotation)"});
-    advance();
-    auto ann = parse_type();
+    // the annotation is optional; absent → the bound expression's type (monomorphic)
+    ast::type ann;
+    bool annotated = false;
+    if (curtok_.has_value() && std::holds_alternative<tk::op_colon>(curtok_->t)) {
+      advance();
+      ann = parse_type();
+      annotated = true;
+    }
 
     expect<tk::op_eq>("'='");
     auto bound_expr = parse_expr(0);
-    auto ty = sema_.type_of(bound_expr.term);
-    if (ty.has_value() && !same_type(ann, *ty)) {
+    // type_of cannot fail here: every failure mode is rejected earlier during parsing
+    auto ty = *sema_.type_of(bound_expr.term);
+    if (annotated && !same_type(ann, ty)) {
       auto lifted = lift_to(bound_expr.term, ann);
       if (lifted.has_value())
         bound_expr.term = std::move(*lifted);
       else
         fail({bound_expr.loc, "C015",
-              "cannot initialize '" + type_name(ann) + "' with a value of type '" + type_name(*ty) + "'",
+              "cannot initialize '" + type_name(ann) + "' with a value of type '" + type_name(ty) + "'",
               "the value must have the annotated type"});
     }
+    if (!annotated) ann = std::move(ty);
 
     expect<tk::kw_in>("'in'");
     sema_.push_binding(name, ann);

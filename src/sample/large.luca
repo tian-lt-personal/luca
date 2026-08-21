@@ -1,45 +1,45 @@
-let inc : int -> int = \x : int . x + 1 in
-let dec : int -> int = \x : int . x - 1 in
-let double : int -> int = \x : int . x * 2 in
-let square : int -> int = \x : int . x * x in
-let negate : int -> int = \x : int . 0 - x in
-let add : int -> int -> int = \x : int . \y : int . x + y in
-let mul : int -> int -> int = \x : int . \y : int . x * y in
-let sub : int -> int -> int = \x : int . \y : int . x - y in
-let sum3 : int -> int -> int -> int = \x : int . \y : int . \z : int . x + y + z in
-let abs : int -> int = \x : int . if x < 0 then 0 - x else x in
-let max : int -> int -> int = \a : int . \b : int . if a > b then a else b in
-let min : int -> int -> int = \a : int . \b : int . if a < b then a else b in
-let clamp : int -> int -> int -> int = \x : int . \lo : int . \hi : int .
+let inc = \x : int . x + 1 in
+let dec = \x : int . x - 1 in
+let double = \x : int . x * 2 in
+let square = \x : int . x * x in
+let negate = \x : int . 0 - x in
+let add = \x : int . \y : int . x + y in
+let mul = \x : int . \y : int . x * y in
+let sub = \x : int . \y : int . x - y in
+let sum3 = \x : int . \y : int . \z : int . x + y + z in
+let abs = \x : int . if x < 0 then 0 - x else x in
+let max = \a : int . \b : int . if a > b then a else b in
+let min = \a : int . \b : int . if a < b then a else b in
+let clamp = \x : int . \lo : int . \hi : int .
   if x < lo then lo else if x > hi then hi else x in
-let classify : int -> int = \x : int .
+let classify = \x : int .
   if x < 0 then 0 - 1 else if x = 0 then 0 else 1 in
-let factorial_like : int -> int = \n : int .
+let factorial_like = \n : int .
   if n < 2 then 1 else n * (n - 1) in
-let quadratic : int -> int -> int -> int -> int = \a : int . \b : int . \c : int . \x : int .
+let quadratic = \a : int . \b : int . \c : int . \x : int .
   a * (x * x) + b * x + c in
-let a : int = 5 in
-let b : int = 10 in
-let c : int = 20 in
-let d : int = 30 in
-let e : int = 40 in
-let f : int = inc a in
-let g : int = square b in
-let h : int = add c d in
-let i : int = mul a b in
-let j : int = abs (0 - 50) in
-let k : int = max c d in
-let l : int = min a b in
-let m : int = clamp 15 0 10 in
-let n : int = sum3 1 2 3 in
-let o : int = quadratic 1 2 3 a in
-let r : int = factorial_like 6 in
-let s : int = classify (0 - 5) in
-let t : int = negate 42 in
-let u : int = if a < b then a + b else a * b in
-let v : int = if c > d then c - d else d - c in
-let w : int = if a = 5 then 1 else 0 in
-let x : int = if b != c then 100 else 200 in
-let y : int = if a < b then if b < c then if c < d then 999 else 0 else 0 else 0 in
-let z : int = f + g + h + i + j + k + l + m + n + o + r + s + t + u + v + w + x + y in
+let a = 5 in
+let b = 10 in
+let c = 20 in
+let d = 30 in
+let e = 40 in
+let f = inc a in
+let g = square b in
+let h = add c d in
+let i = mul a b in
+let j = abs (0 - 50) in
+let k = max c d in
+let l = min a b in
+let m = clamp 15 0 10 in
+let n = sum3 1 2 3 in
+let o = quadratic 1 2 3 a in
+let r = factorial_like 6 in
+let s = classify (0 - 5) in
+let t = negate 42 in
+let u = if a < b then a + b else a * b in
+let v = if c > d then c - d else d - c in
+let w = if a = 5 then 1 else 0 in
+let x = if b != c then 100 else 200 in
+let y = if a < b then if b < c then if c < d then 999 else 0 else 0 else 0 in
+let z = f + g + h + i + j + k + l + m + n + o + r + s + t + u + v + w + x + y in
 z
