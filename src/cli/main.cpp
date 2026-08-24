@@ -27,6 +27,13 @@ void print_value(const value& v) {
                    }
                    std::cout << ')';
                  },
+                 [](sum_value* s) {
+                   std::cout << s->name;
+                   if (!std::holds_alternative<std::monostate>(s->payload)) {
+                     std::cout << ' ';
+                     print_value(s->payload);
+                   }
+                 },
                  [](const closure*) {},  // functions are never printed
              },
              v);

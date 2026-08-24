@@ -65,6 +65,21 @@ static value eval(const ast::term& t, const std::vector<value>& env, std::pmr::m
                           auto base = eval(*f.base, env, arena);
                           return std::get<tuple_value*>(base)->fields[f.index];
                         },
+                        [&](const ast::ctor& c) -> value {
+                          auto* sv = std::pmr::polymorphic_allocator<sum_value>{&arena}.new_object<sum_value>();
+                          sv->name = c.name;
+                          sv->tag = c.tag;
+                          sv->payload = c.payload ? eval(*c.payload, env, arena) : value{std::monostate{}};
+                          return sv;
+                        },
+                        [&](const ast::case_& cs) -> value {
+                          auto* sv = std::get<sum_value*>(eval(*cs.scrutinee, env, arena));
+                          // the arm body is a closure over the payload: apply it like an application
+                          auto c = std::get<closure*>(eval(*cs.arms[sv->tag].body, env, arena));
+                          auto call_env = c->captured_env;
+                          call_env.push_back(std::move(sv->payload));
+                          return eval(*c->abst->body, call_env, arena);
+                        },
                     },
                     t);
 }

@@ -46,6 +46,18 @@ struct kw_string {
 struct kw_fix {
   friend std::strong_ordering operator<=>(kw_fix, kw_fix) = default;
 };
+struct kw_type {
+  friend std::strong_ordering operator<=>(kw_type, kw_type) = default;
+};
+struct kw_of {
+  friend std::strong_ordering operator<=>(kw_of, kw_of) = default;
+};
+struct kw_match {
+  friend std::strong_ordering operator<=>(kw_match, kw_match) = default;
+};
+struct kw_with {
+  friend std::strong_ordering operator<=>(kw_with, kw_with) = default;
+};
 struct li_int {
   std::string_view value;
   friend std::strong_ordering operator<=>(li_int, li_int) = default;
@@ -78,6 +90,9 @@ struct op_gt {
 struct op_lt {
   friend std::strong_ordering operator<=>(op_lt, op_lt) = default;
 };
+struct op_bar {
+  friend std::strong_ordering operator<=>(op_bar, op_bar) = default;
+};
 struct op_comma {
   friend std::strong_ordering operator<=>(op_comma, op_comma) = default;
 };
@@ -105,8 +120,8 @@ struct rbrace {
 
 }  // namespace tk
 
-using token =
-    std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else, tk::kw_true,
-                 tk::kw_false, tk::kw_bool, tk::kw_int, tk::kw_string, tk::kw_fix, tk::li_int, tk::li_str,
-                 tk::op_plus, tk::op_minus, tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt,
-                 tk::op_arrow, tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen, tk::lbrace, tk::rbrace>;
+using token = std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_if, tk::kw_then, tk::kw_else,
+                           tk::kw_true, tk::kw_false, tk::kw_bool, tk::kw_int, tk::kw_string, tk::kw_fix, tk::kw_type,
+                           tk::kw_of, tk::kw_match, tk::kw_with, tk::li_int, tk::li_str, tk::op_plus, tk::op_minus,
+                           tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt, tk::op_lt, tk::op_bar, tk::op_arrow,
+                           tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen, tk::rparen, tk::lbrace, tk::rbrace>;

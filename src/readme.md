@@ -3,10 +3,15 @@
 ### Syntax (EBNF)
 
 ```ebnf
-program       ::= term
+program       ::= { type-decl } term
+
+type-decl     ::= "type" id "=" constructor { "|" constructor }
+constructor   ::= id                                   (* nullary: Zero *)
+                | id "of" type                         (* payload: Num of int, Add of (expr, expr) *)
 
 term          ::= let-term
                 | if-term
+                | match-term
                 | lambda
                 | bin-term
 
@@ -17,6 +22,12 @@ let-term      ::= "let" id (":" type)? "=" term "in" term
                                                   (* structured binding, by element position *)
 
 if-term       ::= "if" term "then" term "else" term
+
+match-term    ::= "match" term "with" match-arm { "|" match-arm }
+match-arm     ::= pattern "." term
+pattern       ::= id                                   (* nullary constructor *)
+                | id id                                (* single payload: Num n *)
+                | id "(" id { "," id } ")"             (* product payload: Add (l, r) *)
 
 lambda        ::= ("\" | "lambda") id ":" type "." term
 
@@ -44,6 +55,7 @@ type          ::= "int"
                 | "(" ")"                              (* unit type *)
                 | "(" type ")"
                 | product-type
+                | id                                   (* name declared by "type" *)
                 | type "->" type                       (* right-associative *)
 
 product-type  ::= "(" type "," type { "," type } ")"
@@ -77,7 +89,7 @@ integer       ::= [0-9]+
 - String literals (`"..."`) are lexed but not yet represented in the AST.
 - `fix (\f : τ . \x : σ . body)` is the fixed-point operator: the generator must have type `τ -> σ` with `τ` equal to `σ`, and the whole expression has type `σ`. The recursion variable is the generator's outermost parameter (`f`).
 - The `fix` operand must be a lambda whose body is a lambda (a "function generator").
-- `fix` is a reserved word.
+- `fix`, `type`, `of`, `match` and `with` are reserved words.
 - Application requires a function in function position and an argument of the parameter type; both are rejected when known to be wrong.
 - The type system is STLC + `fix` (the Y combinator): no polymorphism, no type variables. Lambda parameters must always be annotated. One position infers instead: `let x = E` takes E's type. Everything else is validated against explicit annotations.
 
@@ -88,6 +100,16 @@ integer       ::= [0-9]+
 - Product types are structural and positional: `(int, bool)` matches any other `(int, bool)` element by element, in order.
 - `let {a, b} = E in body` destructures a product by position: `a` is the first element, `b` the second. The arity must match exactly.
 - There is no field access and no named record types — names are given where a tuple is used, via structured binding.
+
+### Variant types (recursive sums)
+
+- `type shape = Circle of int | Square | Rect of (int, int)` declares a **variant type**: a named sum of constructors, each with an optional payload type (`of`). A constructor with no payload is *nullary*.
+- Constructors build values: `Circle 5`, `Rect (3, 4)`, `Square`. A payload is a single value of the payload type (a product payload is one tuple: `Add (e1, e2)`).
+- A type can reference **itself** in its own declaration: `type expr = Num of int | Add of (expr, expr)` — recursive variants. There are no forward references or mutual recursion in v1.
+- `match e with C1 x . e1 | C2 . e2 | C3 (a, b) . e3` consumes a variant: the scrutinee must have a declared variant type, every constructor must appear **exactly once** (in any order), and the arms must produce the same result type. A single pattern name binds the whole payload; `(a, b)` binds the elements of a product payload.
+- Variant types are **nominal**: `shape` equals `shape` (by name) and nothing else — a `shape` value is not interchangeable with an anonymous `(int, bool)` or a different declared type.
+- Constructor names are globally unique and may not be shadowed by `let`/lambda/binding names.
+- A nested `match` inside a non-final arm body needs parens (the `|` separators would otherwise bind to the inner match).
 
 ### Diagnostics
 
@@ -111,9 +133,10 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | B002 | expected a type |
 | B003 | expected an identifier after `\` |
 | B004 | expected an identifier after `let` |
-| B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`) or a binding name |
+| B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`, `with`) or a binding/constructor name |
 | B006 | unexpected end of input |
 | B007 | `fix` operand is not a lambda whose body is a lambda |
+| B009 | malformed `type` declaration |
 | C001 | unbound identifier |
 | C002 | applying a value that is not a function |
 | C003 | argument/parameter type mismatch in an application |
@@ -122,7 +145,16 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C007 | `fix` generator does not satisfy the fixpoint condition `τ = σ` |
 | C008 | operator applied to a non-`int` operand |
 | C009 | top-level expression has a function type |
+| C010 | duplicate type declaration |
+| C011 | unknown type name in a type annotation |
 | C015 | annotated `let` value does not match its annotation |
 | C016 | structured binding target is not a product type |
 | C017 | structured binding arity mismatch |
 | C018 | duplicate name in a binding pattern |
+| C019 | duplicate constructor name |
+| C020 | unknown constructor in a `match` pattern |
+| C021 | `match` scrutinee is not a variant value |
+| C022 | `match` is not exhaustive, repeats a constructor, or has a mismatched payload pattern |
+| C023 | `match` arms have different result types |
+| C024 | constructor argument does not match its payload type |
+| C025 | binding a constructor name |

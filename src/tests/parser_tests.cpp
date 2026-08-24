@@ -704,6 +704,72 @@ TEST(parser_tests, structured_binding_on_inferred_let) {
   EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
 }
 
+// -- variant types ------------------------------------------------------------
+
+TEST(parser_tests, type_decl_constructors) {
+  auto r = parse_ok("type shape = Circle of int | Square | Rect of (int, int)\n1");
+  // constructors become usable in expressions
+  parse_ok("type shape = Circle of int | Square\nCircle 5");
+  parse_ok("type shape = Circle of int | Square\nSquare");
+  parse_ok("type shape = Rect of (int, int)\nRect (3, 4)");
+}
+
+TEST(parser_tests, type_decl_self_recursive) {
+  parse_ok("type expr = Num of int | Add of (expr, expr)\n1");
+  parse_ok("type tree = Leaf of int | Node of (tree, tree)\n1");
+}
+
+TEST(parser_tests, type_ref_annotation) {
+  auto r = parse_ok("type shape = Circle of int\nlet f : shape -> int = \\s : shape . 1 in 2");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ref = std::get<ast::type_ref>(as<ast::abst>(*a.arg).param_type);
+  EXPECT_EQ(ref.name, "shape");
+}
+
+TEST(parser_tests, ctor_nullary) {
+  auto r = parse_ok("type shape = Circle | Square\nSquare");
+  const auto& c = as<ast::ctor>(r.first);
+  EXPECT_EQ(c.name, "Square");
+  EXPECT_EQ(c.payload, nullptr);
+  EXPECT_EQ(c.tag, 1u);
+}
+
+TEST(parser_tests, ctor_with_payload) {
+  auto r = parse_ok("type shape = Circle of int | Square\nCircle 5");
+  const auto& c = as<ast::ctor>(r.first);
+  EXPECT_EQ(c.name, "Circle");
+  EXPECT_EQ(c.tag, 0u);
+  ASSERT_NE(c.payload, nullptr);
+  EXPECT_EQ(as<ast::li_int>(*c.payload).value, 5);
+}
+
+TEST(parser_tests, ctor_with_product_payload) {
+  auto r = parse_ok("type shape = Rect of (int, int)\nRect (3, 4)");
+  const auto& c = as<ast::ctor>(r.first);
+  EXPECT_EQ(c.name, "Rect");
+  ASSERT_NE(c.payload, nullptr);
+  EXPECT_TRUE(is<ast::tup>(*c.payload));
+}
+
+TEST(parser_tests, match_node_shape) {
+  auto r = parse_ok(
+      "type shape = Circle of int | Square\n"
+      "let pick = \\s : shape . match s with Circle r . r | Square . 0 in 1");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& body = as<ast::case_>(*as<ast::abst>(*a.arg).body);
+  EXPECT_TRUE(is<ast::var>(*body.scrutinee));
+  ASSERT_EQ(body.arms.size(), 2u);
+  // each arm body is a closure over the payload
+  EXPECT_TRUE(is<ast::abst>(*body.arms[0].body));
+  EXPECT_TRUE(is<ast::abst>(*body.arms[1].body));
+}
+
+TEST(parser_tests, match_arm_order_free) {
+  parse_ok(
+      "type shape = Circle of int | Square\n"
+      "(\\s : shape . match s with Square . 0 | Circle r . r) (Circle 5)");
+}
+
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};
 TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam()), parse_err); }
 
@@ -740,27 +806,41 @@ TEST_P(parser_diag_theory, code) {
 
 INSTANTIATE_TEST_SUITE_P(
     codes, parser_diag_theory,
-    ::testing::Values(
-        std::pair{"x", "C001"}, std::pair{"int", "B001"}, std::pair{"\\x : if . x", "B002"},
-        std::pair{"\\int . x", "B003"}, std::pair{"let 1 = 2 in 3", "B004"}, std::pair{"(1 + 2", "B005"},
-        std::pair{"\\x : int", "B005"}, std::pair{"1 +", "B006"}, std::pair{"\\", "B006"},
-        std::pair{"(\\f : int . f 5) 1", "C002"}, std::pair{"(\\f : int -> int . f true) 1", "C003"},
-        std::pair{"if 42 then 1 else 2", "C004"}, std::pair{"if true then 1 else true", "C005"},
-        std::pair{"fix 42", "B007"}, std::pair{"fix (\\f : int -> int . \\x : bool . 1)", "C007"},
-        std::pair{"1 + true", "C008"}, std::pair{"\\x : int -> int . x", "C009"}, std::pair{"@", "A001"},
-        std::pair{"\"unclosed", "A002"}, std::pair{"123abc", "A003"},
-        // 'type' is no longer a keyword: it lexes as an ordinary identifier
-        std::pair{"type 42 = {x:int}\n1", "C001"}, std::pair{"type a\n1", "C001"}, std::pair{"type a = 42\n1", "C001"},
-        std::pair{"type a = {x:int}\ntype a = {y:int}\n1", "C001"}, std::pair{"type a = {x:int, x:bool}\n1", "C001"},
-        // named record syntax is gone: braces and type names are rejected
-        std::pair{"\\p : point . 1", "B002"}, std::pair{"\\p : {} . 1", "B002"}, std::pair{"\\p : {x} . 1", "B002"},
-        std::pair{"{}", "B001"}, std::pair{"{1}", "B001"}, std::pair{"{x:int = 1, x:bool = 2}", "B001"},
-        std::pair{"{x:int = true}", "B001"}, std::pair{"42.x", "B001"}, std::pair{"1 . 2", "B001"},
-        // products: arity and element types are checked positionally
-        std::pair{"(1, 2) + 1", "C008"}, std::pair{"(1, true) 2", "C002"},
-        std::pair{"(\\p : (int, bool) . 1) (1, 2)", "C003"}, std::pair{"let x : (int, bool) = (1, 2) in x", "C015"},
-        std::pair{"let {a, b} = 42 in a", "C016"}, std::pair{"let {a} = (1, true) in a", "C017"},
-        std::pair{"let {a, a} = (1, true) in a", "C018"}));
+    ::testing::Values(std::pair{"x", "C001"}, std::pair{"int", "B001"}, std::pair{"\\x : if . x", "B002"},
+                      std::pair{"\\int . x", "B003"}, std::pair{"let 1 = 2 in 3", "B004"}, std::pair{"(1 + 2", "B005"},
+                      std::pair{"\\x : int", "B005"}, std::pair{"1 +", "B006"}, std::pair{"\\", "B006"},
+                      std::pair{"(\\f : int . f 5) 1", "C002"}, std::pair{"(\\f : int -> int . f true) 1", "C003"},
+                      std::pair{"if 42 then 1 else 2", "C004"}, std::pair{"if true then 1 else true", "C005"},
+                      std::pair{"fix 42", "B007"}, std::pair{"fix (\\f : int -> int . \\x : bool . 1)", "C007"},
+                      std::pair{"1 + true", "C008"}, std::pair{"\\x : int -> int . x", "C009"}, std::pair{"@", "A001"},
+                      std::pair{"\"unclosed", "A002"}, std::pair{"123abc", "A003"},
+                      // 'type' is a keyword again: old record declarations are rejected as malformed
+                      std::pair{"type 42 = {x:int}\n1", "B009"}, std::pair{"type a\n1", "B005"},
+                      std::pair{"type a = 42\n1", "B009"}, std::pair{"type a = {x:int}\ntype a = {y:int}\n1", "B009"},
+                      std::pair{"type a = {x:int, x:bool}\n1", "B009"},
+                      // named record syntax is gone: braces and unknown type names are rejected
+                      std::pair{"\\p : point . 1", "C011"}, std::pair{"\\p : {} . 1", "B002"},
+                      std::pair{"\\p : {x} . 1", "B002"}, std::pair{"{}", "B001"}, std::pair{"{1}", "B001"},
+                      std::pair{"{x:int = 1, x:bool = 2}", "B001"}, std::pair{"{x:int = true}", "B001"},
+                      std::pair{"42.x", "B001"}, std::pair{"1 . 2", "B001"},
+                      // products: arity and element types are checked positionally
+                      std::pair{"(1, 2) + 1", "C008"}, std::pair{"(1, true) 2", "C002"},
+                      std::pair{"(\\p : (int, bool) . 1) (1, 2)", "C003"},
+                      std::pair{"let x : (int, bool) = (1, 2) in x", "C015"}, std::pair{"let {a, b} = 42 in a", "C016"},
+                      std::pair{"let {a} = (1, true) in a", "C017"}, std::pair{"let {a, a} = (1, true) in a", "C018"},
+                      // variants: declarations, constructors, match
+                      std::pair{"type expr = Num of int | Num of bool\n1", "C019"},
+                      std::pair{"type a = A\ntype b = A\n1", "C019"}, std::pair{"type a = A\ntype a = B\n1", "C010"},
+                      std::pair{"\\x : foo . 1", "C011"}, std::pair{"type a = A\nlet A = 1 in A", "C025"},
+                      std::pair{"type a = A of int\n(\\x : a . \\A : int . x) (A 1) 2", "C025"},
+                      std::pair{"type a = A of int\nA true", "C024"}, std::pair{"type a = A of int\nA", "B006"},
+                      std::pair{"type a = A\nmatch 42 with A . 1", "C021"},
+                      std::pair{"type a = A of int | B\nmatch (A 1) with A n . 1", "C022"},
+                      std::pair{"type a = A of int | B\nmatch (A 1) with A n . 1 | A n . 2", "C022"},
+                      std::pair{"type a = A of int\nmatch (A 1) with B n . 1", "C020"},
+                      std::pair{"type a = A of int\nmatch (A 1) with A (x, y) . 1", "C022"},
+                      std::pair{"type a = A of int | B\nmatch (A 1) with A n . 1 | B . true", "C023"},
+                      std::pair{"type a = A of int\n(\\x : int . x) (A 1)", "C003"}));
 
 TEST(parser_tests, diag_position_multiline) {
   try {

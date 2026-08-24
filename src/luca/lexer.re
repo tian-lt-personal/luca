@@ -44,6 +44,7 @@ lex_result lexer::next() noexcept {
     "!="       { return token_span{tk::op_ne{}, cur_span()}; }
     ">"        { return token_span{tk::op_gt{}, cur_span()}; }
     "<"        { return token_span{tk::op_lt{}, cur_span()}; }
+    "|"        { return token_span{tk::op_bar{}, cur_span()}; }
     "->"       { return token_span{tk::op_arrow{}, cur_span()}; }
     ","        { return token_span{tk::op_comma{}, cur_span()}; }
     ":"        { return token_span{tk::op_colon{}, cur_span()}; }
@@ -62,6 +63,10 @@ lex_result lexer::next() noexcept {
     "int"       { return token_span{tk::kw_int{}, cur_span()}; }
     "string"    { return token_span{tk::kw_string{}, cur_span()}; }
     "fix"       { return token_span{tk::kw_fix{}, cur_span()}; }
+    "type"      { return token_span{tk::kw_type{}, cur_span()}; }
+    "of"        { return token_span{tk::kw_of{}, cur_span()}; }
+    "match"     { return token_span{tk::kw_match{}, cur_span()}; }
+    "with"      { return token_span{tk::kw_with{}, cur_span()}; }
 
     id         { return token_span{tk::id{.name = lexeme()}, cur_span()}; }
     number     { return token_span{tk::li_int{.value = lexeme()}, cur_span()}; }
