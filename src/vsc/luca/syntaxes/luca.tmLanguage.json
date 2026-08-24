@@ -48,11 +48,11 @@
       "patterns": [
         {
           "name": "keyword.control.luca",
-          "match": "\\b(if|then|else)\\b"
+          "match": "\\b(if|then|else|match|with|of)\\b"
         },
         {
           "name": "keyword.other.luca",
-          "match": "\\b(let|in|lambda|fix)\\b|\\\\"
+          "match": "\\b(let|in|lambda|fix|type)\\b|\\\\"
         }
       ]
     },
@@ -92,7 +92,7 @@
       "patterns": [
         {
           "name": "keyword.operator.luca",
-          "match": "->|!=|>=|<=|[+\\-*/=<>.,:()]"
+          "match": "->|!=|>=|<=|[+\\-*/=<>.,:()|]"
         }
       ]
     }

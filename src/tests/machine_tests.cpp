@@ -197,9 +197,7 @@ TEST(machine_tests, unit_in_let) {
 
 // -- structured binding and annotated let --------------------------------------
 
-TEST(machine_tests, structured_binding) {
-  EXPECT_EQ(std::get<bool>(eval_ok("let {a, b} = (1, true) in b").v), true);
-}
+TEST(machine_tests, structured_binding) { EXPECT_EQ(std::get<bool>(eval_ok("let {a, b} = (1, true) in b").v), true); }
 
 TEST(machine_tests, structured_binding_multi_field_use) {
   EXPECT_EQ(std::get<int>(eval_ok("let {a, b} = (1, true) in a + (if b then 1 else 0)").v), 2);
@@ -254,6 +252,78 @@ TEST(machine_tests, nested_tuple_inferred) {
   ASSERT_EQ(inner->fields.size(), 2u);
   EXPECT_EQ(std::get<int>(inner->fields[0]), 1);
   EXPECT_EQ(std::get<bool>(inner->fields[1]), true);
+}
+
+// -- variant types ------------------------------------------------------------
+
+TEST(machine_tests, variant_expr_eval) {
+  // the canonical recursive variant: an expression AST evaluated with fix
+  EXPECT_EQ(std::get<int>(eval_ok("type expr = Num of int | Add of (expr, expr)\n"
+                                  "let eval = fix (\\eval : expr -> int . \\e : expr . match e with "
+                                  "Num n . n | Add (l, r) . eval l + eval r) in "
+                                  "eval (Add (Num 1, Add (Num 2, Num 3)))")
+                              .v),
+            6);
+}
+
+TEST(machine_tests, variant_nullary) {
+  EXPECT_EQ(std::get<int>(eval_ok("type shape = Circle | Square\n"
+                                  "let pick = \\s : shape . match s with Circle . 1 | Square . 2 in "
+                                  "pick Square")
+                              .v),
+            2);
+}
+
+TEST(machine_tests, variant_single_payload) {
+  EXPECT_EQ(std::get<int>(eval_ok("type box = Box of int\n"
+                                  "let get = \\b : box . match b with Box n . n in "
+                                  "get (Box 42)")
+                              .v),
+            42);
+}
+
+TEST(machine_tests, variant_arm_order_free) {
+  EXPECT_EQ(std::get<int>(eval_ok("type shape = Circle of int | Square\n"
+                                  "let pick = \\s : shape . match s with Square . 0 | Circle r . r * r in "
+                                  "pick (Circle 3)")
+                              .v),
+            9);
+}
+
+TEST(machine_tests, variant_tree_depth) {
+  EXPECT_EQ(std::get<int>(eval_ok("type tree = Leaf of int | Node of (tree, tree)\n"
+                                  "let depth = fix (\\depth : tree -> int . \\t : tree . match t with "
+                                  "Leaf n . 1 | Node (l, r) . 1 + (if depth l > depth r then depth l else depth r)) in "
+                                  "depth (Node (Leaf 1, Node (Leaf 2, Leaf 3)))")
+                              .v),
+            3);
+}
+
+TEST(machine_tests, variant_in_tuple) {
+  auto v = eval_ok("type box = Box of int\n(Box 5, 6)");
+  auto* tv = std::get<tuple_value*>(v.v);
+  auto* sv = std::get<sum_value*>(tv->fields[0]);
+  EXPECT_EQ(sv->name, "Box");
+  EXPECT_EQ(std::get<int>(sv->payload), 5);
+  EXPECT_EQ(std::get<int>(tv->fields[1]), 6);
+}
+
+TEST(machine_tests, variant_function_payload) {
+  auto v = eval_ok("type fn = Fn of (int -> int)\nFn (\\x : int . x + 1)");
+  auto* sv = std::get<sum_value*>(v.v);
+  EXPECT_EQ(sv->name, "Fn");
+  EXPECT_TRUE(std::holds_alternative<closure*>(sv->payload));
+}
+
+TEST(machine_tests, variant_match_of_match) {
+  // the outer pattern binds a variant; an inner match consumes it
+  EXPECT_EQ(std::get<int>(eval_ok("type box = Box of int\n"
+                                  "type pair = Pair of (box, int)\n"
+                                  "let get = \\p : pair . match p with Pair (b, n) . "
+                                  "(match b with Box m . m + n) in "
+                                  "get (Pair (Box 3, 4))")
+                              .v),
+            7);
 }
 
 }  // namespace tests

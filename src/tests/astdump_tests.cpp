@@ -45,6 +45,33 @@ TEST(astdump_tests, product_type_dump) {
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"],
             nlohmann::json::parse(R"({"prod":{"fields":[{"type":{"int":{}}},{"type":{"bool":{}}}]}})"));
 }
+TEST(astdump_tests, type_ref_dump) {
+  auto r = parse_ok("type a = A of int\nlet f : a -> int = \\x : a . 1 in 2");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"], nlohmann::json::parse(R"({"ref":{"name":"a"}})"));
+}
+TEST(astdump_tests, ctor_dump) {
+  auto r = parse_ok("type a = A of int | B\nA 5");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["ctor"]["name"], "A");
+  EXPECT_EQ(j["ctor"]["tag"], 0);
+  EXPECT_EQ(j["ctor"]["payload"], nlohmann::json::parse(R"({"li_int":{"value":5}})"));
+}
+TEST(astdump_tests, nullary_ctor_dump) {
+  auto r = parse_ok("type a = A of int | B\nB");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["ctor"]["name"], "B");
+  EXPECT_EQ(j["ctor"]["payload"], nullptr);
+}
+TEST(astdump_tests, match_dump) {
+  auto r = parse_ok("type a = A of int | B\n(\\x : a . match x with A n . n | B . 0) (A 5)");
+  auto j = dump(r.first);
+  const auto& cs = j["appl"]["func"]["abst"]["body"];
+  EXPECT_TRUE(cs["case"]["scrutinee"]["var"].is_object());
+  ASSERT_EQ(cs["case"]["arms"].size(), 2);
+  EXPECT_TRUE(cs["case"]["arms"][0]["body"]["abst"].is_object());
+  EXPECT_TRUE(cs["case"]["arms"][1]["body"]["abst"].is_object());
+}
 
 TEST(astdump_tests, integer_literal) {
   auto r = parse_ok("42");

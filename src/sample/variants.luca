@@ -1,0 +1,15 @@
+// variants.luca - variant types (recursive sums)
+//
+// `type expr = ...` declares a named sum type; the constructors build values
+// (`Num 5`, `Add (e1, e2)`), and `match` consumes them by constructor.
+// A type can reference itself in its own declaration (recursive variants).
+
+type expr = Num of int | Add of (expr, expr) | Mul of (expr, expr)
+
+let eval = fix (\eval: expr -> int. \e: expr.
+  match e with
+    Num n . n
+  | Add (l, r). eval l + eval r
+  | Mul (l, r). eval l * eval r)
+in
+eval (Add (Num 1, Add (Num 2, Mul(Num 3, Num 4))))

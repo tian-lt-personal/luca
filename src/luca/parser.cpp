@@ -16,7 +16,8 @@ constexpr bool holds_one_of(const token& tok) noexcept {
 }
 
 constexpr bool is_start_of_expr(const token& tk) noexcept {
-  return holds_one_of<tk::id, tk::li_int, tk::kw_lambda, tk::kw_if, tk::kw_true, tk::kw_false, tk::lparen>(tk);
+  return holds_one_of<tk::id, tk::li_int, tk::kw_lambda, tk::kw_if, tk::kw_match, tk::kw_true, tk::kw_false,
+                      tk::lparen>(tk);
 }
 
 constexpr int prec_unary_minus = 40;
@@ -70,6 +71,7 @@ std::string type_name(const ast::type& t) {
                           }
                           return s + ")";
                         },
+                        [](const ast::type_ref& r) { return std::string{r.name}; },
                     },
                     t);
 }
@@ -91,6 +93,10 @@ std::string token_text(const token& t) {
                         [](const tk::kw_int&) { return std::string{"int"}; },
                         [](const tk::kw_string&) { return std::string{"string"}; },
                         [](const tk::kw_fix&) { return std::string{"fix"}; },
+                        [](const tk::kw_type&) { return std::string{"type"}; },
+                        [](const tk::kw_of&) { return std::string{"of"}; },
+                        [](const tk::kw_match&) { return std::string{"match"}; },
+                        [](const tk::kw_with&) { return std::string{"with"}; },
                         [](const tk::op_plus&) { return std::string{"+"}; },
                         [](const tk::op_minus&) { return std::string{"-"}; },
                         [](const tk::op_mul&) { return std::string{"*"}; },
@@ -99,6 +105,7 @@ std::string token_text(const token& t) {
                         [](const tk::op_ne&) { return std::string{"!="}; },
                         [](const tk::op_gt&) { return std::string{">"}; },
                         [](const tk::op_lt&) { return std::string{"<"}; },
+                        [](const tk::op_bar&) { return std::string{"|"}; },
                         [](const tk::op_arrow&) { return std::string{"->"}; },
                         [](const tk::op_comma&) { return std::string{","}; },
                         [](const tk::op_colon&) { return std::string{":"}; },
@@ -144,6 +151,7 @@ class parser {
         curtok_(lex_.next()),
         nextok_(lex_.next()) {}
   parse_result run_pass() && {
+    while (curtok_.has_value() && std::holds_alternative<tk::kw_type>(curtok_->t)) parse_type_decl();
     auto t = parse_tem();
     if (curtok_.has_value())
       fail({curtok_->loc, "B001", "unexpected token '" + token_text(curtok_->t) + "' after the top-level expression",
@@ -152,6 +160,40 @@ class parser {
   }
 
  private:
+  void parse_type_decl() {
+    auto start = curtok_->loc;
+    advance();  // 'type'
+    check_curtok();
+    auto* id = std::get_if<tk::id>(&peek());
+    if (!id)
+      fail({curtok_->loc, "B009", "expected a type name after 'type', found " + found_text(curtok_),
+            "write type name = C1 of T1 | C2 of T2 | ..."});
+    auto name = id->name;
+    advance();
+    expect<tk::op_eq>("'='");
+    sema_.declare_type(start, name);
+    for (;;) {
+      check_curtok();
+      auto* cid = std::get_if<tk::id>(&peek());
+      if (!cid)
+        fail({curtok_->loc, "B009", "expected a constructor name, found " + found_text(curtok_),
+              "write type name = C1 of T1 | C2 of T2 | ..."});
+      auto cname = cid->name;
+      auto cname_loc = curtok_->loc;
+      advance();
+      ast::type payload = ast::type{ast::type_unit{}};  // nullary
+      if (curtok_.has_value() && std::holds_alternative<tk::kw_of>(curtok_->t)) {
+        advance();
+        payload = parse_type();
+      }
+      sema_.add_ctor(cname_loc, name, cname, std::move(payload));
+      if (curtok_.has_value() && std::holds_alternative<tk::op_bar>(curtok_->t)) {
+        advance();
+        continue;
+      }
+      break;
+    }
+  }
   parsed parse_tem() {
     auto t = parse_expr(0);
     if (auto ty = sema_.type_of(t.term); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
@@ -205,6 +247,7 @@ class parser {
                           [this](tk::kw_lambda) { return parse_lambda(); },
                           [this](tk::kw_let) { return parse_let(); },
                           [this](tk::kw_if) { return parse_if(); },
+                          [this](tk::kw_match) { return parse_match(); },
                           [this](tk::kw_fix) { return parse_fix(); },
                           [this](tk::lparen) { return parse_tuple_literal(); },
                           [this](tk::op_minus) -> parsed {
@@ -226,11 +269,10 @@ class parser {
     advance();
     return std::visit(overloaded{
                           [this, loc](tk::id id) -> parsed {
-                            auto idx = sema_.resolve_binding_index(id.name);
-                            if (!idx.has_value())
-                              fail({loc, "C001", "unbound identifier '" + std::string{id.name} + "'",
-                                    "bind it with a lambda parameter or a let expression"});
-                            return {ast::term{ast::var{*idx}}, loc};
+                            if (auto info = sema_.lookup_ctor(id.name); info.has_value())
+                              return parse_ctor(id, *info, loc);
+                            auto idx = sema_.resolve_binding_index(loc, id.name);
+                            return {ast::term{ast::var{idx}}, loc};
                           },
                           [loc](tk::li_int lit) -> parsed {
                             int val = 0;
@@ -244,6 +286,24 @@ class parser {
                           },
                       },
                       tok);
+  }
+  // constructor application: Zero (nullary) or Num 5 / Add (e1, e2)
+  parsed parse_ctor(tk::id id, ctor_info info, src_range loc) {
+    auto* ty = make_type(actx_, ast::type{ast::type_ref{info.type_name}});
+    if (std::holds_alternative<ast::type_unit>(info.payload_ty))
+      return {ast::term{ast::ctor{.payload = nullptr, .tag = info.tag, .ty = ty, .name = std::string{id.name}}}, loc};
+    auto arg = parse_expr(prec_appl);
+    // type_of cannot fail here: every failure mode is rejected earlier during parsing
+    auto aty = *sema_.type_of(arg.term);
+    if (!same_type(aty, info.payload_ty))
+      fail({arg.loc, "C024",
+            "cannot construct '" + std::string{id.name} + "' with a value of type '" + type_name(aty) +
+                "', expected '" + type_name(info.payload_ty) + "'",
+            "pass a value of the constructor's payload type"});
+    return {
+        ast::term{ast::ctor{
+            .payload = make_term(actx_, std::move(arg.term)), .tag = info.tag, .ty = ty, .name = std::string{id.name}}},
+        {loc.begin, arg.loc.end}};
   }
   // () is the unit literal; (e) is just e; (e1, e2, ...) is a product literal.
   // Element types are inferred — type_of cannot fail here: every failure mode is
@@ -292,9 +352,17 @@ class parser {
                                  return ast::type{ast::type_string{}};
                                },
                                [this](tk::lparen) -> ast::type { return parse_product_type(); },
+                               [this](tk::id id) -> ast::type {
+                                 auto loc = curtok_->loc;
+                                 advance();
+                                 if (!sema_.is_declared_type(id.name))
+                                   fail({loc, "C011", "unknown type '" + std::string{id.name} + "'",
+                                         "declare it with 'type name = C1 of T1 | ...' before use"});
+                                 return ast::type{ast::type_ref{std::string{id.name}}};
+                               },
                                [this](auto) -> ast::type {
                                  fail({curtok_->loc, "B002", "expected a type, found " + found_text(curtok_),
-                                       "types are int, bool, string, (), (T, T, ...) and T -> S"});
+                                       "types are int, bool, string, (), (T, T, ...), declared names and T -> S"});
                                },
                            },
                            peek());
@@ -337,7 +405,11 @@ class parser {
       fail({curtok_->loc, "B003", "expected an identifier after '\\', found " + found_text(curtok_),
             "write \\name : type . body"});
     auto name = id->name;
+    auto name_loc = curtok_->loc;
     advance();
+    if (sema_.lookup_ctor(name).has_value())
+      fail({name_loc, "C025", "cannot bind '" + std::string{name} + "': it is a constructor name",
+            "use a different name"});
     expect<tk::op_colon>("':'");
     auto param_type = parse_type();
 
@@ -368,6 +440,153 @@ class parser {
                                   .els = make_term(actx_, std::move(else_expr.term))}},
             {start.begin, else_expr.loc.end}};
   }
+  // match e with C1 x . e1 | C2 . e2 | C3 (a, b) . e3
+  // The scrutinee must have a declared variant type; every constructor must appear
+  // exactly once. Each arm's body is desugared into a closure over the runtime
+  // payload, which the machine applies to the constructor's payload.
+  parsed parse_match() {
+    auto start = curtok_->loc;
+    advance();  // 'match'
+    auto scrutinee = parse_expr(0);
+    expect<tk::kw_with>("'with'");
+    auto sty = sema_.type_of(scrutinee.term);
+    auto* ref = sty.has_value() ? std::get_if<ast::type_ref>(&*sty) : nullptr;
+    if (!ref)
+      fail({scrutinee.loc, "C021",
+            "match requires a variant value, found '" +
+                (sty.has_value() ? type_name(*sty) : std::string{"an unknown type"}) + "'",
+            "match over a value of a declared variant type"});
+    auto* ctors = sema_.lookup_type(ref->name);
+    if (!ctors)
+      fail({scrutinee.loc, "C021", "match requires a variant value, found '" + type_name(*sty) + "'",
+            "match over a value of a declared variant type"});
+    std::vector<bool> used(ctors->size(), false);
+    // arms are stored by constructor tag (the machine dispatches arms[tag]);
+    // exhaustiveness guarantees every slot is filled regardless of source order
+    std::vector<ast::case_arm> arms(ctors->size());
+    std::optional<ast::type> result_ty;
+    src_range last_loc = start;
+    for (;;) {
+      check_curtok();
+      auto* cid = std::get_if<tk::id>(&peek());
+      if (!cid)
+        fail({curtok_->loc, "B005", "expected a constructor name, found " + found_text(curtok_),
+              "write C x . body or C (x, y) . body"});
+      auto cname = cid->name;
+      auto cname_loc = curtok_->loc;
+      advance();
+      auto info = sema_.lookup_ctor(cname);
+      if (!info.has_value() || info->type_name != ref->name)
+        fail({cname_loc, "C020", "unknown constructor '" + std::string{cname} + "' for type '" + ref->name + "'",
+              "use a constructor of '" + ref->name + "'"});
+      if (used[info->tag])
+        fail({cname_loc, "C022", "constructor '" + std::string{cname} + "' appears more than once in this match",
+              "each constructor may appear at most once"});
+      used[info->tag] = true;
+
+      // payload pattern: C | C x | C (x, y, ...)
+      std::vector<std::string> names;
+      std::vector<ast::type> elem_tys;
+      std::vector<ast::term> field_terms;  // $t.field(k), built while bindings are pushed
+      bool use_temp = false;
+      if (curtok_.has_value() && std::holds_alternative<tk::lparen>(curtok_->t)) {
+        advance();  // '('
+        for (;;) {
+          check_curtok();
+          auto* pid = std::get_if<tk::id>(&peek());
+          if (!pid)
+            fail({curtok_->loc, "B005", "expected a binding name, found " + found_text(curtok_),
+                  "write C (x, y) . body"});
+          auto pname = pid->name;
+          auto pname_loc = curtok_->loc;
+          advance();
+          if (sema_.lookup_ctor(pname).has_value())
+            fail({pname_loc, "C025", "cannot bind '" + std::string{pname} + "': it is a constructor name",
+                  "use a different name"});
+          for (const auto& n : names)
+            if (n == pname)
+              fail({pname_loc, "C018", "duplicate name '" + std::string{pname} + "' in the binding pattern",
+                    "use different names"});
+          names.emplace_back(std::string{pname});
+          if (curtok_.has_value() && std::holds_alternative<tk::op_comma>(curtok_->t)) {
+            advance();
+            continue;
+          }
+          expect<tk::rparen>("')'");
+          break;
+        }
+        if (names.size() == 1) {
+          elem_tys.push_back(info->payload_ty);  // (x) is just a single binding
+        } else {
+          use_temp = true;
+          auto* prod = std::get_if<ast::type_prod>(&info->payload_ty);
+          if (!prod || prod->fields.size() != names.size())
+            fail({cname_loc, "C022",
+                  "pattern binds " + std::to_string(names.size()) + " name(s) but '" + std::string{cname} +
+                      "' has payload '" + type_name(info->payload_ty) + "'",
+                  "bind one name per payload element"});
+          for (const auto& t : prod->fields) elem_tys.push_back(*t);
+        }
+      } else if (curtok_.has_value() && std::holds_alternative<tk::id>(curtok_->t)) {
+        auto pname = std::get<tk::id>(curtok_->t).name;
+        auto pname_loc = curtok_->loc;
+        advance();
+        if (sema_.lookup_ctor(pname).has_value())
+          fail({pname_loc, "C025", "cannot bind '" + std::string{pname} + "': it is a constructor name",
+                "use a different name"});
+        names.emplace_back(std::string{pname});
+        elem_tys.push_back(info->payload_ty);
+      }
+      expect<tk::op_dot>("'.'");
+
+      // push bindings, parse the body
+      if (use_temp) sema_.push_binding("$t", info->payload_ty);
+      for (size_t k = 0; k < names.size(); ++k) {
+        if (use_temp) {
+          auto idx = sema_.resolve_binding_index(cname_loc, "$t");
+          field_terms.push_back(ast::term{ast::field{.base = make_term(actx_, ast::term{ast::var{idx}}), .index = k}});
+        }
+        sema_.push_binding(names[k], elem_tys[k]);
+      }
+      auto body = parse_expr(0);
+      for (size_t k = 0; k < names.size(); ++k) sema_.pop_binding();
+      if (use_temp) sema_.pop_binding();
+
+      // desugar: closure over the payload — (\$t : payload . ...) the machine applies
+      ast::term inner = std::move(body.term);
+      if (use_temp)
+        for (size_t k = names.size(); k-- > 0;)
+          inner = ast::term{ast::appl{
+              .func = make_term(
+                  actx_, ast::term{ast::abst{.param_type = elem_tys[k], .body = make_term(actx_, std::move(inner))}}),
+              .arg = make_term(actx_, std::move(field_terms[k]))}};
+      auto arm_body = make_term(
+          actx_, ast::term{ast::abst{.param_type = info->payload_ty, .body = make_term(actx_, std::move(inner))}});
+      // arm result types must agree; type_of cannot fail here (the arm fn is a lambda)
+      auto arm_ty = *sema_.type_of(*arm_body);
+      auto* arm_arrow = std::get_if<ast::type_arrow>(&arm_ty);
+      if (result_ty.has_value() && !same_type(*result_ty, *arm_arrow->to))
+        fail({body.loc, "C023",
+              "match arms must have the same type: '" + type_name(*result_ty) + "' vs '" + type_name(*arm_arrow->to) +
+                  "'",
+              "make every arm produce the same type"});
+      if (!result_ty.has_value()) result_ty = *arm_arrow->to;
+      arms[info->tag] = ast::case_arm{.payload_ty = make_type(actx_, info->payload_ty), .body = arm_body};
+      last_loc = body.loc;
+
+      if (curtok_.has_value() && std::holds_alternative<tk::op_bar>(curtok_->t)) {
+        advance();
+        continue;
+      }
+      break;
+    }
+    for (size_t i = 0; i < used.size(); ++i)
+      if (!used[i])
+        fail({start, "C022", "match does not handle constructor '" + std::string{(*ctors)[i].name} + "'",
+              "handle every constructor of the type"});
+    return {ast::term{ast::case_{.scrutinee = make_term(actx_, std::move(scrutinee.term)), .arms = std::move(arms)}},
+            {start.begin, last_loc.end}};
+  }
   parsed parse_let() {
     auto start = curtok_->loc;
     advance();
@@ -379,8 +598,11 @@ class parser {
       fail({curtok_->loc, "B004", "expected an identifier after 'let', found " + found_text(curtok_),
             "write let name : type = expr in body"});
     auto name = id->name;
+    auto name_loc = curtok_->loc;
     advance();
-
+    if (sema_.lookup_ctor(name).has_value())
+      fail({name_loc, "C025", "cannot bind '" + std::string{name} + "': it is a constructor name",
+            "use a different name"});
     // the annotation is optional; absent → the bound expression's type (monomorphic)
     ast::type ann;
     bool annotated = false;
@@ -425,6 +647,9 @@ class parser {
       auto name = id->name;
       auto loc = curtok_->loc;
       advance();
+      if (sema_.lookup_ctor(name).has_value())
+        fail(
+            {loc, "C025", "cannot bind '" + std::string{name} + "': it is a constructor name", "use a different name"});
       for (const auto& [n, _] : names)
         if (n == name)
           fail({loc, "C018", "duplicate name '" + std::string{name} + "' in the binding pattern",
@@ -458,8 +683,8 @@ class parser {
     std::vector<ast::term> field_terms;
     field_terms.reserve(names.size());
     for (size_t k = 0; k < names.size(); ++k) {
-      auto idx = sema_.resolve_binding_index("$t");
-      field_terms.push_back(ast::term{ast::field{.base = make_term(actx_, ast::term{ast::var{*idx}}), .index = k}});
+      auto idx = sema_.resolve_binding_index(bound_expr.loc, "$t");
+      field_terms.push_back(ast::term{ast::field{.base = make_term(actx_, ast::term{ast::var{idx}}), .index = k}});
       sema_.push_binding(names[k].first, *prod->fields[k]);
     }
     auto body = parse_expr(0);

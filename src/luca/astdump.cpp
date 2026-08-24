@@ -7,6 +7,7 @@
 void to_json(nlohmann::json& j, const ast::type& t);
 void to_json(nlohmann::json& j, const ast::type_arrow& t);
 void to_json(nlohmann::json& j, const ast::type_prod& t);
+void to_json(nlohmann::json& j, const ast::type_ref& t);
 void to_json(nlohmann::json& j, const ast::term& t);
 void to_json(nlohmann::json& j, const ast::abst& a);
 void to_json(nlohmann::json& j, const ast::appl& a);
@@ -16,6 +17,8 @@ void to_json(nlohmann::json& j, const ast::fix& f);
 void to_json(nlohmann::json& j, const ast::li_unit& u);
 void to_json(nlohmann::json& j, const ast::tup& t);
 void to_json(nlohmann::json& j, const ast::field& f);
+void to_json(nlohmann::json& j, const ast::ctor& c);
+void to_json(nlohmann::json& j, const ast::case_& cs);
 
 void to_json(nlohmann::json& j, const ast::type_unit&) { j["unit"] = nlohmann::json::object(); }
 void to_json(nlohmann::json& j, const ast::type_int&) { j["int"] = nlohmann::json::object(); }
@@ -34,6 +37,10 @@ void to_json(nlohmann::json& j, const ast::type_prod& t) {
     to_json(fj["type"], *f);
     j["prod"]["fields"].push_back(std::move(fj));
   }
+}
+void to_json(nlohmann::json& j, const ast::type_ref& t) {
+  j["ref"] = nlohmann::json::object();
+  j["ref"]["name"] = t.name;
 }
 void to_json(nlohmann::json& j, const ast::type& t) {
   std::visit([&j](const auto& v) { to_json(j, v); }, t);
@@ -91,6 +98,25 @@ void to_json(nlohmann::json& j, const ast::field& f) {
   j["field"] = nlohmann::json::object();
   to_json(j["field"]["base"], *f.base);
   j["field"]["index"] = f.index;
+}
+void to_json(nlohmann::json& j, const ast::ctor& c) {
+  j["ctor"] = nlohmann::json::object();
+  j["ctor"]["name"] = c.name;
+  j["ctor"]["tag"] = c.tag;
+  if (c.payload)
+    to_json(j["ctor"]["payload"], *c.payload);
+  else
+    j["ctor"]["payload"] = nullptr;
+}
+void to_json(nlohmann::json& j, const ast::case_& cs) {
+  j["case"] = nlohmann::json::object();
+  to_json(j["case"]["scrutinee"], *cs.scrutinee);
+  j["case"]["arms"] = nlohmann::json::array();
+  for (const auto& a : cs.arms) {
+    nlohmann::json aj;
+    to_json(aj["body"], *a.body);
+    j["case"]["arms"].push_back(std::move(aj));
+  }
 }
 
 nlohmann::json dump(const ast::term& term) {

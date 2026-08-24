@@ -83,6 +83,23 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
             if (!prod || f.index >= prod->fields.size()) return std::nullopt;
             return std::optional<ast::type>{*prod->fields[f.index]};
           },
+          [&](const ast::ctor& c) -> std::optional<ast::type> { return std::optional<ast::type>{*c.ty}; },
+          [&](const ast::case_& cs) -> std::optional<ast::type> {
+            auto sty = type_of_impl(*cs.scrutinee, param_types, binding_types, ctx);
+            if (!sty.has_value() || !std::holds_alternative<ast::type_ref>(*sty)) return std::nullopt;
+            std::optional<ast::type> result;
+            for (const auto& arm : cs.arms) {
+              auto fty = type_of_impl(*arm.body, param_types, binding_types, ctx);
+              if (!fty.has_value()) return std::nullopt;
+              auto* arrow = std::get_if<ast::type_arrow>(&*fty);
+              if (!arrow) return std::nullopt;
+              if (!result.has_value())
+                result = std::optional<ast::type>{*arrow->to};
+              else if (!same_type(*result, *arrow->to))
+                return std::nullopt;
+            }
+            return result;
+          },
           [](const auto&) -> std::optional<ast::type> { return std::nullopt; },
       },
       t);
@@ -99,17 +116,20 @@ bool same_type(const ast::type& a, const ast::type& b) noexcept {
     for (size_t i = 0; i < la->fields.size(); ++i)
       if (!same_type(*la->fields[i], *ra->fields[i])) return false;
   }
+  if (const auto *la = std::get_if<ast::type_ref>(&a), *ra = std::get_if<ast::type_ref>(&b); la && ra)
+    return la->name == ra->name;  // nominal: same declared name → same type
   return true;
 }
 
-std::optional<int> sema::resolve_binding_index(std::string_view name) const {
+int sema::resolve_binding_index(src_range loc, std::string_view name) const {
   for (size_t i = 0; i < bindings_.size(); ++i) {
     if (bindings_[bindings_.size() - 1 - i] == name) {
       if (i > std::numeric_limits<int>::max()) throw std::logic_error{"de bruijn index is too large."};
       return static_cast<int>(i);
     }
   }
-  return std::nullopt;
+  throw sema_err{{loc, "C001", "unbound identifier '" + std::string{name} + "'",
+                  "bind it with a lambda parameter or a let expression"}};
 }
 
 void sema::push_binding(std::string_view name, ast::type ty) {
@@ -122,6 +142,38 @@ void sema::pop_binding() {
 }
 
 std::optional<ast::type> sema::type_of(const ast::term& t) noexcept {
-  std::vector<ast::type> param_types;
+  // seed the param stack with the parser's binding types: a variable's de Bruijn
+  // index counts the full stack (outer bindings + the term's own lambdas), so a
+  // term that references an outer binding through an in-term lambda or a match
+  // arm resolves correctly instead of falling off the end
+  std::vector<ast::type> param_types = binding_types_;
   return type_of_impl(t, param_types, binding_types_, *ctx_);
+}
+
+void sema::declare_type(src_range loc, std::string_view name) {
+  if (!types_.emplace(std::string{name}, std::vector<ast::sum_ctor>{}).second)
+    throw sema_err{{loc, "C010", "duplicate type declaration '" + std::string{name} + "'", "use a different name"}};
+}
+
+void sema::add_ctor(src_range loc, std::string_view type_name, std::string_view cname, ast::type payload) {
+  if (ctors_.contains(std::string{cname}))
+    throw sema_err{{loc, "C019", "duplicate constructor '" + std::string{cname} + "'", "use a different name"}};
+  auto it = types_.find(std::string{type_name});
+  if (it == types_.end()) throw std::logic_error{"add_ctor: unknown type '" + std::string{type_name} + "'"};
+  auto& ctors = it->second;
+  ctors.push_back(ast::sum_ctor{std::string{cname}, std::move(payload)});
+  ctors_.emplace(std::string{cname}, ctor_info{std::string{type_name}, ctors.size() - 1, ctors.back().payload_ty});
+}
+
+bool sema::is_declared_type(std::string_view name) const { return types_.contains(std::string{name}); }
+
+std::optional<ctor_info> sema::lookup_ctor(std::string_view name) const {
+  auto it = ctors_.find(std::string{name});
+  if (it == ctors_.end()) return std::nullopt;
+  return it->second;
+}
+
+const std::vector<ast::sum_ctor>* sema::lookup_type(std::string_view name) const {
+  auto it = types_.find(std::string{name});
+  return it == types_.end() ? nullptr : &it->second;
 }

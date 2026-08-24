@@ -36,20 +36,20 @@ TEST_P(lexer_theory, next) {
 
 INSTANTIATE_TEST_SUITE_P(empty_source, lexer_theory,
                          ::testing::Values(test_case{.source = "", .expected = std::unexpected{lex_err_eof{}}}));
-INSTANTIATE_TEST_SUITE_P(keyword_tokens, lexer_theory,
-                         ::testing::Values(test_case{.source = "\\", .expected = tk::kw_lambda{}},
-                                           test_case{.source = "lambda", .expected = tk::kw_lambda{}},
-                                           test_case{.source = "let", .expected = tk::kw_let{}},
-                                           test_case{.source = "in", .expected = tk::kw_in{}},
-                                           test_case{.source = "if", .expected = tk::kw_if{}},
-                                           test_case{.source = "then", .expected = tk::kw_then{}},
-                                           test_case{.source = "else", .expected = tk::kw_else{}},
-                                           test_case{.source = "bool", .expected = tk::kw_bool{}},
-                                           test_case{.source = "true", .expected = tk::kw_true{}},
-                                           test_case{.source = "false", .expected = tk::kw_false{}},
-                                           test_case{.source = "int", .expected = tk::kw_int{}},
-                                           test_case{.source = "string", .expected = tk::kw_string{}},
-                                           test_case{.source = "fix", .expected = tk::kw_fix{}}));
+INSTANTIATE_TEST_SUITE_P(
+    keyword_tokens, lexer_theory,
+    ::testing::Values(
+        test_case{.source = "\\", .expected = tk::kw_lambda{}},
+        test_case{.source = "lambda", .expected = tk::kw_lambda{}},
+        test_case{.source = "let", .expected = tk::kw_let{}}, test_case{.source = "in", .expected = tk::kw_in{}},
+        test_case{.source = "if", .expected = tk::kw_if{}}, test_case{.source = "then", .expected = tk::kw_then{}},
+        test_case{.source = "else", .expected = tk::kw_else{}}, test_case{.source = "bool", .expected = tk::kw_bool{}},
+        test_case{.source = "true", .expected = tk::kw_true{}},
+        test_case{.source = "false", .expected = tk::kw_false{}}, test_case{.source = "int", .expected = tk::kw_int{}},
+        test_case{.source = "string", .expected = tk::kw_string{}},
+        test_case{.source = "fix", .expected = tk::kw_fix{}}, test_case{.source = "type", .expected = tk::kw_type{}},
+        test_case{.source = "of", .expected = tk::kw_of{}}, test_case{.source = "match", .expected = tk::kw_match{}},
+        test_case{.source = "with", .expected = tk::kw_with{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters
@@ -156,8 +156,9 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = ">", .expected = tk::op_gt{}}, test_case{.source = "<", .expected = tk::op_lt{}},
         test_case{.source = ":", .expected = tk::op_colon{}}, test_case{.source = "->", .expected = tk::op_arrow{}},
         test_case{.source = ".", .expected = tk::op_dot{}}, test_case{.source = ",", .expected = tk::op_comma{}},
-        test_case{.source = "(", .expected = tk::lparen{}}, test_case{.source = ")", .expected = tk::rparen{}},
-        test_case{.source = "{", .expected = tk::lbrace{}}, test_case{.source = "}", .expected = tk::rbrace{}}));
+        test_case{.source = "|", .expected = tk::op_bar{}}, test_case{.source = "(", .expected = tk::lparen{}},
+        test_case{.source = ")", .expected = tk::rparen{}}, test_case{.source = "{", .expected = tk::lbrace{}},
+        test_case{.source = "}", .expected = tk::rbrace{}}));
 INSTANTIATE_TEST_SUITE_P(
     comment_tokens, lexer_theory,
     ::testing::Values(test_case{.source = "// this is a comment", .expected = std::unexpected{lex_err_eof{}}},
