@@ -3,9 +3,7 @@
 ### Syntax (EBNF)
 
 ```ebnf
-program       ::= { type-decl } term
-
-type-decl     ::= "type" id "=" record-type
+program       ::= term
 
 term          ::= let-term
                 | if-term
@@ -16,7 +14,7 @@ let-term      ::= "let" id (":" type)? "=" term "in" term
                                                   (* desugars to (\id : type . term) term;
                                                      absent annotation: the bound expression's type *)
                 | "let" "{" id { "," id } "}" "=" term "in" term
-                                                  (* structured binding, by field order *)
+                                                  (* structured binding, by element position *)
 
 if-term       ::= "if" term "then" term "else" term
 
@@ -28,31 +26,27 @@ apply         ::= unary { unary }                     (* left-associative implic
 
 unary         ::= "-" unary                           (* desugared to "0 - operand" *)
                 | "fix" lambda
-                | postfix
-
-postfix       ::= atomic { "." id }                   (* field access, binds tighter than application *)
+                | atomic
 
 atomic        ::= id
                 | integer
                 | "true"
                 | "false"
-                | "(" term ")"
+                | "(" term ")"                         (* parenthesized expression *)
                 | tuple-lit
 
-tuple-lit     ::= "{" field { "," field } "}"
-
-field         ::= id (":" type)? "=" term
+tuple-lit     ::= "(" ")"                              (* unit *)
+                | "(" term "," term { "," term } ")"   (* product literal *)
 
 type          ::= "int"
                 | "bool"
                 | "string"
                 | "(" ")"                              (* unit type *)
                 | "(" type ")"
-                | id                                   (* name declared by "type" *)
-                | record-type
+                | product-type
                 | type "->" type                       (* right-associative *)
 
-record-type   ::= "{" id ":" type { "," id ":" type } "}"
+product-type  ::= "(" type "," type { "," type } ")"
 ```
 
 #### Lexical Tokens
@@ -66,7 +60,6 @@ integer       ::= [0-9]+
 
 | Level | Construct              | Prec |
 |-------|------------------------|------|
-| 6     | Field access `.`       | 60   |
 | 5     | Application            | 50   |
 | 4     | Unary `-`              | 40   |
 | 3     | `*` `/`                | 30   |
@@ -78,7 +71,7 @@ integer       ::= [0-9]+
 - The lambda body extends as far right as possible: `\x:int . x y` parses as `\x:int . (x y)`.
 - `then`/`else` keywords delimit `if` branches; each branch is a full expression.
 - Unary minus `-x` desugars to `0 - x`.
-- `let x : T = E1 in E2` desugars to `(\x : T . E2) E1`; the type annotation is optional — absent, `x` gets E1's inferred type (monomorphic: no generalization). When written, E1 is checked against it (a record literal with matching fields is accepted — see below).
+- `let x : T = E1 in E2` desugars to `(\x : T . E2) E1`; the type annotation is optional — absent, `x` gets E1's inferred type (monomorphic: no generalization). When written, E1 is checked against it.
 - `let` expressions right-associate: `let x : int = 1 in let y : int = 2 in x + y`.
 - Identifiers support hyphens: `foo-bar` is a single identifier.
 - String literals (`"..."`) are lexed but not yet represented in the AST.
@@ -86,19 +79,15 @@ integer       ::= [0-9]+
 - The `fix` operand must be a lambda whose body is a lambda (a "function generator").
 - `fix` is a reserved word.
 - Application requires a function in function position and an argument of the parameter type; both are rejected when known to be wrong.
-- The type system is STLC + `fix` (the Y combinator): no polymorphism, no type variables. Lambda parameters must always be annotated. Two positions infer instead: a record field with no annotation takes its value's type, and `let x = E` takes E's type. Everything else is validated against explicit annotations.
+- The type system is STLC + `fix` (the Y combinator): no polymorphism, no type variables. Lambda parameters must always be annotated. One position infers instead: `let x = E` takes E's type. Everything else is validated against explicit annotations.
 
-### Records and user-defined types
+### Product types (tuples)
 
-- `{x:int = 1, y:bool = false}` is a record literal with an *anonymous* record type `{x:int, y:bool}`. A field's `: type` annotation is optional: `{x = 1, y = false}` infers `{x:int, y:bool}`. Fields are read with `p.x`.
-- `type point = {x:int, y:bool}` (before the expression, referencing only earlier declarations) declares a **nominal** record type `point`, distinct from the anonymous `{x:int, y:bool}` — there are no implicit conversions between named and anonymous record types.
-- A record *literal* can initialize a declared record type where that type is expected (an application argument, an annotated `let`, or a field with that annotation), as long as the fields match by name and type — in any order, reordered to the declaration order. Fields need no annotations for this. Non-literal values must have the exact same type:
-  - `(\p : point . p.x) {x:int = 1, y:bool = true}` ✓
-  - `let p : point = {y:bool = false, x:int = 1} in ...` ✓
-  - `let q : {x:int, y:bool} = {x:int = 1, y:bool = false} in (\p : point . p.x) q` ✗ (`q` has the anonymous type)
-- `let {a, b} = E in body` destructures a record by field order: `a` is the first field, `b` the second. The arity must match.
-- `p.x` binds tighter than application: `f p.x` is `f (p.x)`; write `(f p).x` for the other reading.
-- `type` is a reserved word.
+- `(1, 2)` is a tuple literal with the product type `(int, int)`; `(1, true)` is a mixed tuple. Element types are inferred from the elements; a whole tuple can be annotated: `let p : (int, bool) = (1, true) in ...`.
+- `()` is the unit literal with the unit type `()`. A single parenthesized value is just that value: `(1)` and `(int)` are `1` and `int`.
+- Product types are structural and positional: `(int, bool)` matches any other `(int, bool)` element by element, in order.
+- `let {a, b} = E in body` destructures a product by position: `a` is the first element, `b` the second. The arity must match exactly.
+- There is no field access and no named record types — names are given where a tuple is used, via structured binding.
 
 ### Diagnostics
 
@@ -122,11 +111,9 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | B002 | expected a type |
 | B003 | expected an identifier after `\` |
 | B004 | expected an identifier after `let` |
-| B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`) or a field/binding name |
+| B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`) or a binding name |
 | B006 | unexpected end of input |
 | B007 | `fix` operand is not a lambda whose body is a lambda |
-| B008 | empty tuple `{}` in a literal or type position |
-| B009 | malformed `type` declaration |
 | C001 | unbound identifier |
 | C002 | applying a value that is not a function |
 | C003 | argument/parameter type mismatch in an application |
@@ -135,12 +122,7 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C007 | `fix` generator does not satisfy the fixpoint condition `τ = σ` |
 | C008 | operator applied to a non-`int` operand |
 | C009 | top-level expression has a function type |
-| C010 | duplicate type declaration |
-| C011 | unknown type name in a type annotation |
-| C012 | field access on a value that is not a record |
-| C013 | record has no such field |
-| C014 | duplicate field name in a literal or type declaration |
-| C015 | value cannot initialize the expected type |
-| C016 | structured binding target is not a record |
+| C015 | annotated `let` value does not match its annotation |
+| C016 | structured binding target is not a product type |
 | C017 | structured binding arity mismatch |
 | C018 | duplicate name in a binding pattern |

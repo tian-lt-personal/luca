@@ -15,7 +15,7 @@ using value = std::variant<std::monostate,  // unit
                            int,             // int
                            bool,            // bool
                            closure*,        // arrow type (internal only)
-                           tuple_value*>;   // record type
+                           tuple_value*>;   // product type
 
 struct closure {
   const ast::abst* abst;
@@ -24,7 +24,6 @@ struct closure {
 
 struct tuple_value {
   std::vector<value> fields;
-  std::vector<std::string> names;  // for printing only
 };
 
 struct eval_result {

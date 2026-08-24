@@ -22,31 +22,28 @@ auto parse_ok(const std::string& src) {
 namespace tests {
 
 TEST(astdump_tests, tuple_literal) {
-  auto r = parse_ok("{x:int = 1, y:bool = true}");
+  auto r = parse_ok("(1, true)");
   auto j = dump(r.first);
-  EXPECT_EQ(j,
-            nlohmann::json::parse(R"({"tup":{"fields":[{"name":"x","ann":{"int":{}},"value":{"li_int":{"value":1}}},)"
-                                  R"({"name":"y","ann":{"bool":{}},"value":{"li_bool":{"value":true}}}]}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"tup":{"fields":[{"value":{"li_int":{"value":1}}},)"
+                                     R"({"value":{"li_bool":{"value":true}}}]}})"));
 }
-TEST(astdump_tests, tuple_literal_without_annotation) {
-  auto r = parse_ok("{x = 1}");
+TEST(astdump_tests, unit_literal) {
+  auto r = parse_ok("()");
   auto j = dump(r.first);
-  EXPECT_EQ(
-      j, nlohmann::json::parse(R"({"tup":{"fields":[{"name":"x","ann":{"int":{}},"value":{"li_int":{"value":1}}}]}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_unit":{}})"));
 }
-TEST(astdump_tests, field_access) {
-  auto r = parse_ok("let f : {x:int} -> int = \\p : {x:int} . p.x in 1");
+TEST(astdump_tests, field_node_from_binding) {
+  // field nodes are produced only by the structured-binding desugar
+  auto r = parse_ok("let {a, b} = (1, true) in a");
   auto j = dump(r.first);
-  EXPECT_EQ(j["appl"]["arg"]["abst"]["body"],
+  EXPECT_EQ(j["appl"]["func"]["abst"]["body"]["appl"]["arg"],
             nlohmann::json::parse(R"({"field":{"base":{"var":{"index":0}},"index":0}})"));
 }
-TEST(astdump_tests, record_type_dump) {
-  auto r = parse_ok("type point = {x:int, y:bool}\nlet f : point -> int = \\p : point . 1 in 2");
+TEST(astdump_tests, product_type_dump) {
+  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in 2");
   auto j = dump(r.first);
-  EXPECT_EQ(
-      j["appl"]["arg"]["abst"]["param_type"],
-      nlohmann::json::parse(
-          R"({"rec":{"name":"point","fields":[{"name":"x","type":{"int":{}}},{"name":"y","type":{"bool":{}}}]}})"));
+  EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"],
+            nlohmann::json::parse(R"({"prod":{"fields":[{"type":{"int":{}}},{"type":{"bool":{}}}]}})"));
 }
 
 TEST(astdump_tests, integer_literal) {

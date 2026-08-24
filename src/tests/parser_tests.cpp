@@ -580,65 +580,90 @@ TEST(parser_tests, strict_app_known_wrong) {
   parse_ok("(\\f : int -> int . f 5) (\\x : int . x + 1)");
 }
 
-// -- record types -------------------------------------------------------------
+// -- product types (tuples) ---------------------------------------------------
 
-TEST(parser_tests, anonymous_record_type_annotation) {
-  auto r = parse_ok("let f : {x:int, y:bool} -> int = \\p : {x:int, y:bool} . 1 in 2");
+TEST(parser_tests, product_type_annotation) {
+  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in 2");
   const auto& a = as<ast::appl>(r.first);
-  const auto& rec = std::get<ast::type_rec>(as<ast::abst>(*a.arg).param_type);
-  EXPECT_TRUE(rec.name.empty());
-  ASSERT_EQ(rec.fields.size(), 2);
-  EXPECT_EQ(rec.fields[0].name, "x");
-  EXPECT_TRUE(std::holds_alternative<ast::type_int>(*rec.fields[0].ty));
-  EXPECT_EQ(rec.fields[1].name, "y");
-  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*rec.fields[1].ty));
+  const auto& prod = std::get<ast::type_prod>(as<ast::abst>(*a.arg).param_type);
+  ASSERT_EQ(prod.fields.size(), 2);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(*prod.fields[0]));
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
 }
 
-TEST(parser_tests, named_record_type_expands) {
-  auto r = parse_ok("type point = {x:int, y:bool}\nlet f : point -> int = \\p : point . 1 in 2");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& rec = std::get<ast::type_rec>(as<ast::abst>(*a.arg).param_type);
-  EXPECT_EQ(rec.name, "point");
-  ASSERT_EQ(rec.fields.size(), 2);
-}
-
-TEST(parser_tests, record_type_inside_arrow) {
-  auto r = parse_ok("let id : {x:int} -> {x:int} = \\p : {x:int} . p in 1");
+TEST(parser_tests, product_type_inside_arrow) {
+  auto r = parse_ok("let id : (int, bool) -> (int, bool) = \\p : (int, bool) . p in 1");
   const auto& a = as<ast::appl>(r.first);
   const auto& arrow = std::get<ast::type_arrow>(as<ast::abst>(*a.func).param_type);
-  const auto& rec = std::get<ast::type_rec>(*arrow.from);
-  ASSERT_EQ(rec.fields.size(), 1);
-  EXPECT_EQ(rec.fields[0].name, "x");
+  const auto& prod = std::get<ast::type_prod>(*arrow.from);
+  ASSERT_EQ(prod.fields.size(), 2);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(*prod.fields[0]));
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
 }
 
-// -- tuple literals and field access -----------------------------------------
+TEST(parser_tests, parenthesized_type_is_transparent) {
+  auto r = parse_ok("let f : (int) -> int = \\x : int . x in 1");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(as<ast::abst>(*a.arg).param_type));
+}
 
-TEST(parser_tests, tuple_literal_annotated) {
-  auto r = parse_ok("{x:int = 1, y:bool = true}");
+// -- tuple literals -----------------------------------------------------------
+
+TEST(parser_tests, tuple_literal) {
+  auto r = parse_ok("(1, true)");
   const auto& t = as<ast::tup>(r.first);
   ASSERT_EQ(t.fields.size(), 2);
-  EXPECT_EQ(t.fields[0].name, "x");
-  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
-  EXPECT_EQ(as<ast::li_int>(*t.fields[0].value).value, 1);
-  EXPECT_EQ(t.fields[1].name, "y");
-  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(t.fields[1].ann));
-  EXPECT_EQ(as<ast::li_bool>(*t.fields[1].value).value, true);
+  EXPECT_EQ(as<ast::li_int>(*t.fields[0]).value, 1);
+  EXPECT_EQ(as<ast::li_bool>(*t.fields[1]).value, true);
 }
 
-TEST(parser_tests, tuple_field_without_annotation) {
-  auto r = parse_ok("{x = 1}");
+TEST(parser_tests, tuple_literal_three_elements) {
+  auto r = parse_ok("(1, 2, 3)");
   const auto& t = as<ast::tup>(r.first);
-  ASSERT_EQ(t.fields.size(), 1);
-  EXPECT_EQ(t.fields[0].name, "x");
-  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
+  ASSERT_EQ(t.fields.size(), 3);
+  EXPECT_EQ(as<ast::li_int>(*t.fields[2]).value, 3);
 }
 
-TEST(parser_tests, tuple_field_mixed_annotations) {
-  auto r = parse_ok("{x = 1, y:bool = true}");
+TEST(parser_tests, tuple_literal_nested) {
+  auto r = parse_ok("((1, 2), (true, (3, 4)))");
   const auto& t = as<ast::tup>(r.first);
   ASSERT_EQ(t.fields.size(), 2);
-  EXPECT_TRUE(std::holds_alternative<ast::type_int>(t.fields[0].ann));
-  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(t.fields[1].ann));
+  EXPECT_TRUE(is<ast::tup>(*t.fields[0]));
+  const auto& inner = as<ast::tup>(*t.fields[1]);
+  ASSERT_EQ(inner.fields.size(), 2);
+  EXPECT_EQ(as<ast::li_bool>(*inner.fields[0]).value, true);
+  EXPECT_TRUE(is<ast::tup>(*inner.fields[1]));
+}
+
+TEST(parser_tests, tuple_literal_in_application) {
+  auto r = parse_ok("(\\p : (int, bool) . 1) (1, true)");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_TRUE(is<ast::tup>(*a.arg));
+}
+
+TEST(parser_tests, tuple_elements_are_full_expressions) {
+  auto r = parse_ok("(1 + 2, if true then 3 else 4)");
+  const auto& t = as<ast::tup>(r.first);
+  ASSERT_EQ(t.fields.size(), 2);
+  EXPECT_TRUE(is<ast::binop>(*t.fields[0]));
+  EXPECT_TRUE(is<ast::ifexpr>(*t.fields[1]));
+}
+
+TEST(parser_tests, parenthesized_expr_is_not_tuple) {
+  auto r = parse_ok("(1)");
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+}
+
+TEST(parser_tests, unit_literal) {
+  auto r = parse_ok("()");
+  EXPECT_TRUE(is<ast::li_unit>(r.first));
+}
+
+TEST(parser_tests, unit_literal_in_let) {
+  auto r = parse_ok("let x : () = () in x");
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_TRUE(std::holds_alternative<ast::type_unit>(as<ast::abst>(*a.func).param_type));
+  EXPECT_TRUE(is<ast::li_unit>(*a.arg));
 }
 
 TEST(parser_tests, let_without_annotation) {
@@ -647,33 +672,8 @@ TEST(parser_tests, let_without_annotation) {
   EXPECT_TRUE(std::holds_alternative<ast::type_int>(as<ast::abst>(*a.func).param_type));
 }
 
-TEST(parser_tests, field_access_resolves_index) {
-  auto r = parse_ok("(\\p : {x:int, y:bool} . p.y) {x:int = 1, y:bool = true}");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& f = as<ast::field>(*as<ast::abst>(*a.func).body);
-  EXPECT_EQ(f.index, 1);
-  EXPECT_EQ(as<ast::var>(*f.base).index, 0);
-}
-
-TEST(parser_tests, field_access_chain) {
-  auto r = parse_ok("let f : {a:{b:int}} -> int = \\p : {a:{b:int}} . p.a.b in 1");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& f2 = as<ast::field>(*as<ast::abst>(*a.arg).body);
-  EXPECT_EQ(f2.index, 0);
-  const auto& f1 = as<ast::field>(*f2.base);
-  EXPECT_EQ(f1.index, 0);
-}
-
-TEST(parser_tests, dot_binds_tighter_than_application) {
-  auto r = parse_ok("let g : (int -> int) -> {x:int} -> int = \\f : int -> int . \\q : {x:int} . f q.x in 1");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& g = as<ast::abst>(*a.arg);
-  const auto& body = as<ast::appl>(*as<ast::abst>(*g.body).body);
-  EXPECT_TRUE(is<ast::field>(*body.arg));  // f (q.x), not (f q).x
-}
-
 TEST(parser_tests, structured_binding_desugar_shape) {
-  auto r = parse_ok("let {a, b} = {x:int = 1, y:bool = true} in a");
+  auto r = parse_ok("let {a, b} = (1, true) in a");
   const auto& outer = as<ast::appl>(r.first);  // (\$t : T . ...) E
   const auto& t_lambda = as<ast::abst>(*outer.func);
   const auto& a_lambda = as<ast::appl>(*t_lambda.body);
@@ -687,12 +687,21 @@ TEST(parser_tests, structured_binding_desugar_shape) {
   EXPECT_EQ(as<ast::var>(*as<ast::abst>(*b_lambda.func).body).index, 1);  // body: a
 }
 
-TEST(parser_tests, annotated_let_param_type) {
-  auto r = parse_ok("type point = {x:int, y:bool}\nlet p:point = {x:int = 1, y:bool = true} in p.x");
+TEST(parser_tests, structured_binding_on_annotated_let) {
+  auto r = parse_ok("let p : (int, bool) = (1, true) in let {a, b} = p in a");
   const auto& outer = as<ast::appl>(r.first);
-  const auto& rec = std::get<ast::type_rec>(as<ast::abst>(*outer.func).param_type);
-  EXPECT_EQ(rec.name, "point");
-  ASSERT_EQ(rec.fields.size(), 2u);
+  const auto& prod = std::get<ast::type_prod>(as<ast::abst>(*outer.func).param_type);
+  ASSERT_EQ(prod.fields.size(), 2u);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(*prod.fields[0]));
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
+}
+
+TEST(parser_tests, structured_binding_on_inferred_let) {
+  auto r = parse_ok("let p = (1, true) in let {a, b} = p in b");
+  const auto& outer = as<ast::appl>(r.first);
+  const auto& prod = std::get<ast::type_prod>(as<ast::abst>(*outer.func).param_type);
+  ASSERT_EQ(prod.fields.size(), 2u);
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
 }
 
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};
@@ -739,22 +748,19 @@ INSTANTIATE_TEST_SUITE_P(
         std::pair{"if 42 then 1 else 2", "C004"}, std::pair{"if true then 1 else true", "C005"},
         std::pair{"fix 42", "B007"}, std::pair{"fix (\\f : int -> int . \\x : bool . 1)", "C007"},
         std::pair{"1 + true", "C008"}, std::pair{"\\x : int -> int . x", "C009"}, std::pair{"@", "A001"},
-        std::pair{"\"unclosed", "A002"}, std::pair{"123abc", "A003"}, std::pair{"type 42 = {x:int}\n1", "B009"},
-        std::pair{"type a\n1", "B009"}, std::pair{"type a = 42\n1", "B009"}, std::pair{"\\p : {} . 1", "B008"},
-        std::pair{"type a = {x:int}\ntype a = {y:int}\n1", "C010"}, std::pair{"\\p : point . 1", "C011"},
-        std::pair{"\\p : {x} . 1", "B005"}, std::pair{"type a = {x:int, x:bool}\n1", "C014"}, std::pair{"{}", "B008"},
-        std::pair{"{1}", "B005"}, std::pair{"{x:int = 1, x:bool = 2}", "C014"}, std::pair{"{x:int = true}", "C015"},
-        std::pair{"42.x", "C012"}, std::pair{"(\\p : {x:int} . p.z) {x:int = 1}", "C013"},
-        std::pair{"{x:int = 1} + 1", "C008"},
-        std::pair{"type point = {x:int, y:bool}\n(\\p : point . p.x) {x:int = 1, y:bool = true, z:int = 0}", "C015"},
-        std::pair{"type point = {x:int, y:bool}\n(\\p : point . p.x) {x:bool = true, y:bool = false}", "C015"},
-        std::pair{"type point = {x:int, y:bool}\nlet q : {x:int, y:bool} = {x:int = 1, y:bool = false} in "
-                  "(\\p : point . p.x) q",
-                  "C003"},
-        std::pair{"type point = {x:int, y:bool}\nlet p:point = 42 in p", "C015"},
-        std::pair{"type point = {x:int, y:bool}\nlet p:point = {x:bool = true, y:bool = false} in p", "C015"},
-        std::pair{"let {a, b} = 42 in a", "C016"}, std::pair{"let {a} = {x:int = 1, y:bool = true} in a", "C017"},
-        std::pair{"let {a, a} = {x:int = 1, y:bool = true} in a", "C018"}));
+        std::pair{"\"unclosed", "A002"}, std::pair{"123abc", "A003"},
+        // 'type' is no longer a keyword: it lexes as an ordinary identifier
+        std::pair{"type 42 = {x:int}\n1", "C001"}, std::pair{"type a\n1", "C001"}, std::pair{"type a = 42\n1", "C001"},
+        std::pair{"type a = {x:int}\ntype a = {y:int}\n1", "C001"}, std::pair{"type a = {x:int, x:bool}\n1", "C001"},
+        // named record syntax is gone: braces and type names are rejected
+        std::pair{"\\p : point . 1", "B002"}, std::pair{"\\p : {} . 1", "B002"}, std::pair{"\\p : {x} . 1", "B002"},
+        std::pair{"{}", "B001"}, std::pair{"{1}", "B001"}, std::pair{"{x:int = 1, x:bool = 2}", "B001"},
+        std::pair{"{x:int = true}", "B001"}, std::pair{"42.x", "B001"}, std::pair{"1 . 2", "B001"},
+        // products: arity and element types are checked positionally
+        std::pair{"(1, 2) + 1", "C008"}, std::pair{"(1, true) 2", "C002"},
+        std::pair{"(\\p : (int, bool) . 1) (1, 2)", "C003"}, std::pair{"let x : (int, bool) = (1, 2) in x", "C015"},
+        std::pair{"let {a, b} = 42 in a", "C016"}, std::pair{"let {a} = (1, true) in a", "C017"},
+        std::pair{"let {a, a} = (1, true) in a", "C018"}));
 
 TEST(parser_tests, diag_position_multiline) {
   try {

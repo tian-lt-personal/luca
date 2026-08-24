@@ -62,7 +62,6 @@ lex_result lexer::next() noexcept {
     "int"       { return token_span{tk::kw_int{}, cur_span()}; }
     "string"    { return token_span{tk::kw_string{}, cur_span()}; }
     "fix"       { return token_span{tk::kw_fix{}, cur_span()}; }
-    "type"      { return token_span{tk::kw_type{}, cur_span()}; }
 
     id         { return token_span{tk::id{.name = lexeme()}, cur_span()}; }
     number     { return token_span{tk::li_int{.value = lexeme()}, cur_span()}; }
