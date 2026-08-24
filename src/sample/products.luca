@@ -1,0 +1,12 @@
+// products.luca - product types (tuples)
+//
+// (1, 2) is a tuple literal with type (int, int). Product types carry no field
+// names - names are given where the tuple is used, via structured binding:
+//   let {a, b} = (1, 2) in ...   binds a = 1, b = 2 (by position).
+
+let origin = (0, 0) in
+let move = \p : (int, int) . \dx : int . \dy : int .
+  let {x, y} = p in (x + dx, y + dy) in
+let {x1, y1} = move origin 2 3 in
+let {x2, y2} = move (x1, y1) 5 7 in
+x2 * y2

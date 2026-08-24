@@ -6,13 +6,14 @@
 
 void to_json(nlohmann::json& j, const ast::type& t);
 void to_json(nlohmann::json& j, const ast::type_arrow& t);
-void to_json(nlohmann::json& j, const ast::type_rec& t);
+void to_json(nlohmann::json& j, const ast::type_prod& t);
 void to_json(nlohmann::json& j, const ast::term& t);
 void to_json(nlohmann::json& j, const ast::abst& a);
 void to_json(nlohmann::json& j, const ast::appl& a);
 void to_json(nlohmann::json& j, const ast::binop& b);
 void to_json(nlohmann::json& j, const ast::ifexpr& i);
 void to_json(nlohmann::json& j, const ast::fix& f);
+void to_json(nlohmann::json& j, const ast::li_unit& u);
 void to_json(nlohmann::json& j, const ast::tup& t);
 void to_json(nlohmann::json& j, const ast::field& f);
 
@@ -25,15 +26,13 @@ void to_json(nlohmann::json& j, const ast::type_arrow& t) {
   to_json(j["arrow"]["from"], *t.from);
   to_json(j["arrow"]["to"], *t.to);
 }
-void to_json(nlohmann::json& j, const ast::type_rec& t) {
-  j["rec"] = nlohmann::json::object();
-  j["rec"]["name"] = t.name;
-  j["rec"]["fields"] = nlohmann::json::array();
+void to_json(nlohmann::json& j, const ast::type_prod& t) {
+  j["prod"] = nlohmann::json::object();
+  j["prod"]["fields"] = nlohmann::json::array();
   for (const auto& f : t.fields) {
     nlohmann::json fj;
-    fj["name"] = f.name;
-    to_json(fj["type"], *f.ty);
-    j["rec"]["fields"].push_back(std::move(fj));
+    to_json(fj["type"], *f);
+    j["prod"]["fields"].push_back(std::move(fj));
   }
 }
 void to_json(nlohmann::json& j, const ast::type& t) {
@@ -78,14 +77,13 @@ void to_json(nlohmann::json& j, const ast::fix& f) {
   j["fix"] = nlohmann::json::object();
   to_json(j["fix"]["body"], *f.body);
 }
+void to_json(nlohmann::json& j, const ast::li_unit&) { j["li_unit"] = nlohmann::json::object(); }
 void to_json(nlohmann::json& j, const ast::tup& t) {
   j["tup"] = nlohmann::json::object();
   j["tup"]["fields"] = nlohmann::json::array();
   for (const auto& f : t.fields) {
     nlohmann::json fj;
-    fj["name"] = f.name;
-    to_json(fj["ann"], f.ann);
-    to_json(fj["value"], *f.value);
+    to_json(fj["value"], *f);
     j["tup"]["fields"].push_back(std::move(fj));
   }
 }

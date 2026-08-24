@@ -25,15 +25,10 @@ struct type_arrow {
   type* from;
   type* to;
 };
-struct rec_field {
-  std::string name;
-  const ast::type* ty;
+struct type_prod {
+  std::vector<const ast::type*> fields;  // (int, bool)
 };
-struct type_rec {
-  std::string name;               // "" = anonymous
-  std::vector<rec_field> fields;  // {x:int, y:bool}
-};
-struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arrow, type_rec> {};
+struct type : std::variant<type_unit, type_int, type_bool, type_string, type_arrow, type_prod> {};
 
 struct term;
 struct var {
@@ -53,6 +48,7 @@ struct li_int {
 struct li_bool {
   bool value;
 };
+struct li_unit {};  // ()
 struct binop {
   token op;
   term* left;
@@ -66,20 +62,14 @@ struct ifexpr {
 struct fix {
   term* body;
 };
-// tuple literals persist in the AST (unlike tokens), so names are owning.
-struct tup_field {
-  std::string name;
-  ast::type ann;
-  ast::term* value;
-};
 struct tup {
-  std::vector<tup_field> fields;
+  std::vector<ast::term*> fields;  // (1, true)
 };
 struct field {
   ast::term* base;
-  size_t index;  // resolved against the record type at parse time
+  size_t index;  // projection index; produced only by the binding desugar
 };
-struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, tup, field> {};
+struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, li_unit, tup, field> {};
 
 struct context {
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;

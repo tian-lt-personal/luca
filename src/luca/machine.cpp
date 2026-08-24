@@ -54,14 +54,11 @@ static value eval(const ast::term& t, const std::vector<value>& env, std::pmr::m
                           rec->captured_env.push_back(rec);
                           return rec;
                         },
+                        [&](const ast::li_unit&) -> value { return std::monostate{}; },
                         [&](const ast::tup& t) -> value {
                           auto* tv = std::pmr::polymorphic_allocator<tuple_value>{&arena}.new_object<tuple_value>();
                           tv->fields.reserve(t.fields.size());
-                          tv->names.reserve(t.fields.size());
-                          for (const auto& f : t.fields) {
-                            tv->fields.push_back(eval(*f.value, env, arena));
-                            tv->names.push_back(f.name);
-                          }
+                          for (const auto& f : t.fields) tv->fields.push_back(eval(*f, env, arena));
                           return tv;
                         },
                         [&](const ast::field& f) -> value {

@@ -20,13 +20,12 @@ void print_value(const value& v) {
                  [](bool val) { std::cout << (val ? "true" : "false"); },
                  [](std::monostate) { std::cout << "()"; },
                  [](tuple_value* t) {
-                   std::cout << '{';
+                   std::cout << '(';
                    for (size_t i = 0; i < t->fields.size(); ++i) {
                      if (i) std::cout << ", ";
-                     std::cout << t->names[i] << " = ";
                      print_value(t->fields[i]);
                    }
-                   std::cout << '}';
+                   std::cout << ')';
                  },
                  [](const closure*) {},  // functions are never printed
              },
