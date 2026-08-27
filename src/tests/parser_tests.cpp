@@ -61,126 +61,87 @@ TEST(parser_tests, variable_bound) {
 // -- binary ops --------------------------------------------------------------
 
 TEST(parser_tests, simple_addition) {
+  // pass 2 folds constant expressions: 1 + 2 -> 3
   auto r = parse_ok("1 + 2");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 2);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 3);
 }
 
 TEST(parser_tests, simple_multiplication) {
   auto r = parse_ok("3 * 4");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 3);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 4);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 12);
 }
 
 TEST(parser_tests, precedence_mul_over_add) {
   auto r = parse_ok("1 + 2 * 3");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 1);
-  const auto& rhs = as<ast::binop>(*b.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(rhs.op));
-  EXPECT_EQ(as<ast::li_int>(*rhs.left).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*rhs.right).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 7);
 }
 
 TEST(parser_tests, precedence_add_over_mul_left_to_right) {
   auto r = parse_ok("1 * 2 + 3");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
-  const auto& lhs = as<ast::binop>(*b.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(lhs.op));
-  EXPECT_EQ(as<ast::li_int>(*lhs.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*lhs.right).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 5);
 }
 
 TEST(parser_tests, left_associative_add) {
   auto r = parse_ok("1 + 2 + 3");
-  const auto& outer = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(outer.op));
-  const auto& inner = as<ast::binop>(*outer.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(inner.op));
-  EXPECT_EQ(as<ast::li_int>(*inner.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*inner.right).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*outer.right).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 6);
 }
 
 TEST(parser_tests, left_associative_mul) {
   auto r = parse_ok("4 * 5 * 6");
-  const auto& outer = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(outer.op));
-  const auto& inner = as<ast::binop>(*outer.left);
-  EXPECT_EQ(as<ast::li_int>(*inner.left).value, 4);
-  EXPECT_EQ(as<ast::li_int>(*inner.right).value, 5);
-  EXPECT_EQ(as<ast::li_int>(*outer.right).value, 6);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 120);
 }
 
 TEST(parser_tests, mixed_precedence_chain) {
+  // folds bottom-up: 4 / 5 = 0 first, then 1 + 2 * 3 - 0 = 7
   auto r = parse_ok("1 + 2 * 3 - 4 / 5");
-  const auto& sub = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(sub.op));
-  const auto& add = as<ast::binop>(*sub.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(add.op));
-  EXPECT_EQ(as<ast::li_int>(*add.left).value, 1);
-  // right of add: 2 * 3
-  const auto& mul = as<ast::binop>(*add.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(mul.op));
-  EXPECT_EQ(as<ast::li_int>(*mul.left).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*mul.right).value, 3);
-  // right of sub: 4 / 5
-  const auto& div = as<ast::binop>(*sub.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_div>(div.op));
-  EXPECT_EQ(as<ast::li_int>(*div.left).value, 4);
-  EXPECT_EQ(as<ast::li_int>(*div.right).value, 5);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 7);
 }
 
 // -- comparison ops -----------------------------------------------------------
 
 TEST(parser_tests, comparison_eq) {
   auto r = parse_ok("1 = 2");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_eq>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 2);
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, false);
 }
 
 TEST(parser_tests, comparison_ne) {
   auto r = parse_ok("3 != 4");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_ne>(b.op));
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, true);
 }
 
 TEST(parser_tests, comparison_gt) {
   auto r = parse_ok("5 > 3");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_gt>(b.op));
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, true);
 }
 
 TEST(parser_tests, comparison_lt) {
   auto r = parse_ok("1 < 2");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(b.op));
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, true);
 }
 
 TEST(parser_tests, comparison_prec_over_arithmetic) {
+  // folds bottom-up: (1 + 2) < (3 * 4) -> 3 < 12 -> true
   auto r = parse_ok("1 + 2 < 3 * 4");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(b.op));
-  const auto& lhs = as<ast::binop>(*b.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(lhs.op));
-  const auto& rhs = as<ast::binop>(*b.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(rhs.op));
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, true);
 }
 
 TEST(parser_tests, comparison_as_if_cond) {
+  // the condition folds to a bool literal, so pass 2 keeps only the taken branch
   auto r = parse_ok("if 1 < 2 then 3 else 4");
-  const auto& ie = as<ast::ifexpr>(r.first);
-  const auto& cmp = as<ast::binop>(*ie.cond);
-  EXPECT_TRUE(std::holds_alternative<tk::op_lt>(cmp.op));
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 3);
 }
 
 // -- let-in expressions -------------------------------------------------------
@@ -231,43 +192,28 @@ TEST(parser_tests, let_bool_bound) {
 // -- unary minus -------------------------------------------------------------
 
 TEST(parser_tests, unary_minus_integer) {
+  // -5 desugars to 0 - 5, which pass 2 folds into a negative literal
   auto r = parse_ok("-5");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 0);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 5);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, -5);
 }
 
 TEST(parser_tests, unary_minus_with_binary) {
   auto r = parse_ok("-5 + 3");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(b.op));
-  const auto& neg = as<ast::binop>(*b.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(neg.op));
-  EXPECT_EQ(as<ast::li_int>(*neg.left).value, 0);
-  EXPECT_EQ(as<ast::li_int>(*neg.right).value, 5);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, -2);
 }
 
 TEST(parser_tests, unary_minus_parenthesized) {
   auto r = parse_ok("-(1 + 2)");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(b.op));
-  EXPECT_EQ(as<ast::li_int>(*b.left).value, 0);
-  const auto& inner = as<ast::binop>(*b.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(inner.op));
-  EXPECT_EQ(as<ast::li_int>(*inner.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*inner.right).value, 2);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, -3);
 }
 
 TEST(parser_tests, double_unary_minus) {
   auto r = parse_ok("--5");
-  const auto& outer = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(outer.op));
-  EXPECT_EQ(as<ast::li_int>(*outer.left).value, 0);
-  const auto& inner = as<ast::binop>(*outer.right);
-  EXPECT_TRUE(std::holds_alternative<tk::op_minus>(inner.op));
-  EXPECT_EQ(as<ast::li_int>(*inner.right).value, 5);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 5);
 }
 
 // -- implicit application ----------------------------------------------------
@@ -329,12 +275,13 @@ TEST(parser_tests, application_boolean_arg) {
 }
 
 TEST(parser_tests, application_if_arg) {
+  // pass 2 folds the if argument into the literal 1
   auto r = parse_ok("(\\f : int -> int . f if true then 1 else 2) (\\y : int . y)");
   const auto& a = as<ast::appl>(r.first);
   const auto& ab = as<ast::abst>(*a.func);
   const auto& inner = as<ast::appl>(*ab.body);
   EXPECT_EQ(as<ast::var>(*inner.func).index, 0);
-  EXPECT_TRUE(is<ast::ifexpr>(*inner.arg));
+  EXPECT_EQ(as<ast::li_int>(*inner.arg).value, 1);
 }
 
 // -- parenthesized expressions -----------------------------------------------
@@ -345,14 +292,10 @@ TEST(parser_tests, parens_atom) {
 }
 
 TEST(parser_tests, parens_override_precedence) {
+  // (1 + 2) * 3 folds to 9
   auto r = parse_ok("(1 + 2) * 3");
-  const auto& b = as<ast::binop>(r.first);
-  EXPECT_TRUE(std::holds_alternative<tk::op_mul>(b.op));
-  const auto& inner = as<ast::binop>(*b.left);
-  EXPECT_TRUE(std::holds_alternative<tk::op_plus>(inner.op));
-  EXPECT_EQ(as<ast::li_int>(*inner.left).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*inner.right).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*b.right).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 9);
 }
 
 TEST(parser_tests, parens_application_rhs) {
@@ -381,25 +324,25 @@ TEST(parser_tests, lambda_int_param) {
 }
 
 TEST(parser_tests, lambda_bool_param) {
+  // x is unused: pass 2 shakes the application into the body literal
   auto r = parse_ok("(\\x : bool . true) false");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& ab = as<ast::abst>(*a.func);
-  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
-  EXPECT_EQ(as<ast::li_bool>(*ab.body).value, true);
+  EXPECT_TRUE(is<ast::li_bool>(r.first));
+  EXPECT_EQ(as<ast::li_bool>(r.first).value, true);
 }
 
 TEST(parser_tests, lambda_string_param) {
+  // f is unused and no string value exists to apply it to, so pass 2 shakes
+  // the whole let away (the annotation still type-checked in pass 1)
   auto r = parse_ok("let f : string -> int = \\x : string . 0 in 1");
-  const auto& a = as<ast::appl>(r.first);
-  const auto& ab = as<ast::abst>(*a.arg);
-  EXPECT_TRUE(std::holds_alternative<ast::type_string>(ab.param_type));
-  EXPECT_EQ(as<ast::li_int>(*ab.body).value, 0);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 1);
 }
 
 TEST(parser_tests, lambda_unit_param) {
-  auto r = parse_ok("let f : () -> int = \\x : () . 42 in 1");
+  // f is used (applied to ()), so the binder survives the shake
+  auto r = parse_ok("let f : () -> int = \\x : () . 42 in f ()");
   const auto& a = as<ast::appl>(r.first);
-  const auto& ab = as<ast::abst>(*a.arg);
+  const auto& ab = as<ast::abst>(*a.arg);  // \x : () . 42
   EXPECT_TRUE(std::holds_alternative<ast::type_unit>(ab.param_type));
   EXPECT_EQ(as<ast::li_int>(*ab.body).value, 42);
 }
@@ -466,41 +409,38 @@ TEST(parser_tests, lambda_de_bruijn_nested) {
 }
 
 TEST(parser_tests, lambda_de_bruijn_shadow) {
+  // the outer \x is never referenced (the inner x shadows it), so pass 2
+  // drops it and the inner x keeps index 0
   auto r = parse_ok("(\\x : int . \\x : bool . x) 1 true");
-  const auto& outer_app = as<ast::appl>(r.first);
-  const auto& inner_app = as<ast::appl>(*outer_app.func);
-  const auto& outer = as<ast::abst>(*inner_app.func);
-  const auto& inner = as<ast::abst>(*outer.body);
-  EXPECT_EQ(as<ast::var>(*inner.body).index, 0);  // inner x shadows outer
+  const auto& a = as<ast::appl>(r.first);
+  EXPECT_EQ(as<ast::li_bool>(*a.arg).value, true);
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_TRUE(std::holds_alternative<ast::type_bool>(ab.param_type));
+  EXPECT_EQ(as<ast::var>(*ab.body).index, 0);  // inner x: innermost
 }
 
 // -- if expressions ----------------------------------------------------------
 
 TEST(parser_tests, if_simple) {
+  // pass 2 keeps only the taken branch of a constant if
   auto r = parse_ok("if true then 1 else 2");
-  const auto& ie = as<ast::ifexpr>(r.first);
-  EXPECT_EQ(as<ast::li_bool>(*ie.cond).value, true);
-  EXPECT_EQ(as<ast::li_int>(*ie.then).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*ie.els).value, 2);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 1);
 }
 
 TEST(parser_tests, if_with_binop_cond) { EXPECT_THROW(parse("if 1 + 2 then 3 else 4"), parse_err); }
 
 TEST(parser_tests, if_parenthesized_branches) {
+  // branches fold first, then the constant if keeps the then-branch
   auto r = parse_ok("if true then 1 + 2 else 3 + 4");
-  const auto& ie = as<ast::ifexpr>(r.first);
-  EXPECT_TRUE(is<ast::binop>(*ie.then));
-  EXPECT_TRUE(is<ast::binop>(*ie.els));
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 3);
 }
 
 TEST(parser_tests, nested_if) {
   auto r = parse_ok("if true then if false then 1 else 2 else 3");
-  const auto& outer = as<ast::ifexpr>(r.first);
-  const auto& inner = as<ast::ifexpr>(*outer.then);
-  EXPECT_EQ(as<ast::li_bool>(*inner.cond).value, false);
-  EXPECT_EQ(as<ast::li_int>(*inner.then).value, 1);
-  EXPECT_EQ(as<ast::li_int>(*inner.els).value, 2);
-  EXPECT_EQ(as<ast::li_int>(*outer.els).value, 3);
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 2);
 }
 
 // -- compositions ------------------------------------------------------------
@@ -513,11 +453,12 @@ TEST(parser_tests, lambda_applied_directly) {
 }
 
 TEST(parser_tests, lambda_in_if) {
+  // the if folds to its then-branch (a lambda), which is then applied
   auto r = parse_ok("(if true then \\x : int . x else \\x : int . 0) 1");
   const auto& a = as<ast::appl>(r.first);
-  const auto& ie = as<ast::ifexpr>(*a.func);
-  EXPECT_TRUE(is<ast::abst>(*ie.then));
-  EXPECT_TRUE(is<ast::abst>(*ie.els));
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_TRUE(std::holds_alternative<ast::type_int>(ab.param_type));
+  EXPECT_EQ(as<ast::var>(*ab.body).index, 0);
 }
 
 TEST(parser_tests, if_in_lambda_body) {
@@ -583,16 +524,18 @@ TEST(parser_tests, strict_app_known_wrong) {
 // -- product types (tuples) ---------------------------------------------------
 
 TEST(parser_tests, product_type_annotation) {
-  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in 2");
+  // f is applied, so the binder (and its annotation) survives pass 2
+  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in f (1, true)");
   const auto& a = as<ast::appl>(r.first);
-  const auto& prod = std::get<ast::type_prod>(as<ast::abst>(*a.arg).param_type);
+  const auto& ab = as<ast::abst>(*a.arg);  // \p : (int, bool) . 1
+  const auto& prod = std::get<ast::type_prod>(ab.param_type);
   ASSERT_EQ(prod.fields.size(), 2);
   EXPECT_TRUE(std::holds_alternative<ast::type_int>(*prod.fields[0]));
   EXPECT_TRUE(std::holds_alternative<ast::type_bool>(*prod.fields[1]));
 }
 
 TEST(parser_tests, product_type_inside_arrow) {
-  auto r = parse_ok("let id : (int, bool) -> (int, bool) = \\p : (int, bool) . p in 1");
+  auto r = parse_ok("let id : (int, bool) -> (int, bool) = \\p : (int, bool) . p in id (1, true)");
   const auto& a = as<ast::appl>(r.first);
   const auto& arrow = std::get<ast::type_arrow>(as<ast::abst>(*a.func).param_type);
   const auto& prod = std::get<ast::type_prod>(*arrow.from);
@@ -602,7 +545,7 @@ TEST(parser_tests, product_type_inside_arrow) {
 }
 
 TEST(parser_tests, parenthesized_type_is_transparent) {
-  auto r = parse_ok("let f : (int) -> int = \\x : int . x in 1");
+  auto r = parse_ok("let f : (int) -> int = \\x : int . x in f 5");
   const auto& a = as<ast::appl>(r.first);
   EXPECT_TRUE(std::holds_alternative<ast::type_int>(as<ast::abst>(*a.arg).param_type));
 }
@@ -636,17 +579,19 @@ TEST(parser_tests, tuple_literal_nested) {
 }
 
 TEST(parser_tests, tuple_literal_in_application) {
+  // p is unused: pass 2 shakes the application away
   auto r = parse_ok("(\\p : (int, bool) . 1) (1, true)");
-  const auto& a = as<ast::appl>(r.first);
-  EXPECT_TRUE(is<ast::tup>(*a.arg));
+  EXPECT_TRUE(is<ast::li_int>(r.first));
+  EXPECT_EQ(as<ast::li_int>(r.first).value, 1);
 }
 
 TEST(parser_tests, tuple_elements_are_full_expressions) {
+  // pass 2 folds each element to a constant
   auto r = parse_ok("(1 + 2, if true then 3 else 4)");
   const auto& t = as<ast::tup>(r.first);
   ASSERT_EQ(t.fields.size(), 2);
-  EXPECT_TRUE(is<ast::binop>(*t.fields[0]));
-  EXPECT_TRUE(is<ast::ifexpr>(*t.fields[1]));
+  EXPECT_EQ(as<ast::li_int>(*t.fields[0]).value, 3);
+  EXPECT_EQ(as<ast::li_int>(*t.fields[1]).value, 3);
 }
 
 TEST(parser_tests, parenthesized_expr_is_not_tuple) {
@@ -674,17 +619,16 @@ TEST(parser_tests, let_without_annotation) {
 
 TEST(parser_tests, structured_binding_desugar_shape) {
   auto r = parse_ok("let {a, b} = (1, true) in a");
+  // b is unused: pass 2 shakes the \b application (and its $t.field(1) arg);
+  // the surviving \a binder keeps index 0
   const auto& outer = as<ast::appl>(r.first);  // (\$t : T . ...) E
   const auto& t_lambda = as<ast::abst>(*outer.func);
   const auto& a_lambda = as<ast::appl>(*t_lambda.body);
   const auto& field0 = as<ast::field>(*a_lambda.arg);  // $t.field(0)
   EXPECT_EQ(field0.index, 0u);
   EXPECT_EQ(as<ast::var>(*field0.base).index, 0);
-  const auto& b_lambda = as<ast::appl>(*as<ast::abst>(*a_lambda.func).body);
-  const auto& field1 = as<ast::field>(*b_lambda.arg);  // $t.field(1)
-  EXPECT_EQ(field1.index, 1u);
-  EXPECT_EQ(as<ast::var>(*field1.base).index, 1);
-  EXPECT_EQ(as<ast::var>(*as<ast::abst>(*b_lambda.func).body).index, 1);  // body: a
+  const auto& a_abst = as<ast::abst>(*a_lambda.func);
+  EXPECT_EQ(as<ast::var>(*a_abst.body).index, 0);  // body: a (was index 1 before the shake)
 }
 
 TEST(parser_tests, structured_binding_on_annotated_let) {
@@ -720,7 +664,8 @@ TEST(parser_tests, type_decl_self_recursive) {
 }
 
 TEST(parser_tests, type_ref_annotation) {
-  auto r = parse_ok("type shape = Circle of int\nlet f : shape -> int = \\s : shape . 1 in 2");
+  // f is applied to a constructor value, so the binder survives pass 2
+  auto r = parse_ok("type shape = Circle of int\nlet f : shape -> int = \\s : shape . 1 in f (Circle 1)");
   const auto& a = as<ast::appl>(r.first);
   const auto& ref = std::get<ast::type_ref>(as<ast::abst>(*a.arg).param_type);
   EXPECT_EQ(ref.name, "shape");
@@ -752,9 +697,10 @@ TEST(parser_tests, ctor_with_product_payload) {
 }
 
 TEST(parser_tests, match_node_shape) {
+  // pick is applied, so the binder (and the match shape) survives pass 2
   auto r = parse_ok(
       "type shape = Circle of int | Square\n"
-      "let pick = \\s : shape . match s with Circle r . r | Square . 0 in 1");
+      "let pick = \\s : shape . match s with Circle r . r | Square . 0 in pick (Circle 5)");
   const auto& a = as<ast::appl>(r.first);
   const auto& body = as<ast::case_>(*as<ast::abst>(*a.arg).body);
   EXPECT_TRUE(is<ast::var>(*body.scrutinee));
@@ -768,6 +714,25 @@ TEST(parser_tests, match_arm_order_free) {
   parse_ok(
       "type shape = Circle of int | Square\n"
       "(\\s : shape . match s with Square . 0 | Circle r . r) (Circle 5)");
+}
+
+// -- pass-2 optimizer ----------------------------------------------------------
+
+TEST(parser_tests, div_zero_not_folded) {
+  // x / 0 is UB at runtime; pass 2 must not fold it into a compile-time crash
+  auto r = parse_ok("1 / 0");
+  const auto& b = as<ast::binop>(r.first);
+  EXPECT_TRUE(std::holds_alternative<tk::op_div>(b.op));
+  EXPECT_EQ(as<ast::li_int>(*b.right).value, 0);
+}
+
+TEST(parser_tests, shake_renumbers_indices) {
+  // dropping \y renumbers the free reference to x from index 1 to 0
+  auto r = parse_ok("(\\x : int . (\\y : int . x) 7) 5");
+  const auto& a = as<ast::appl>(r.first);
+  const auto& ab = as<ast::abst>(*a.func);
+  EXPECT_EQ(as<ast::var>(*ab.body).index, 0);
+  EXPECT_EQ(as<ast::li_int>(*a.arg).value, 5);
 }
 
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};

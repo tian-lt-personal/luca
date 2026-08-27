@@ -1,5 +1,6 @@
 // std
 #include <cassert>
+#include <climits>
 #include <optional>
 #include <string>
 // luca
@@ -142,6 +143,190 @@ diagnostic lex_err_diag(const lex_err& e) {
   return {err_loc(e), code, msg, hint};
 }
 
+// -- pass 2: AST optimization ---------------------------------------------------
+//
+// After pass 1 has built the fully type-checked tree, rewrite it in place,
+// preserving evaluation semantics:
+//   * tree-shaking: appl(abst(x, body), arg) where x is unused in body becomes
+//     body with free-variable de Bruijn indices decremented by 1 (this is what
+//     `let x = e in b` desugars to; the arg is dropped — the language is pure);
+//   * constant folding: binop of two int literals becomes the literal result
+//     (x / 0 is never folded: the machine's raw C++ division is UB at runtime,
+//     and the lazy `if` means a /0 in a dead branch is never evaluated);
+//   * dead-branch elimination: if <bool literal> then A else B becomes A/B.
+//
+// A binder x (the fn of an appl) is used iff its body contains a var{k} at
+// nesting depth d (counting abst binders only) with k == d: x sits exactly one
+// binder above the body root. Match arm bodies are absts but never the fn of
+// an appl, so their payload closures are never dropped (the machine applies
+// each arm body to the payload); the same holds for fix's abst.
+
+bool uses_binder(const ast::term& t, int depth) noexcept {
+  return std::visit(
+      overloaded{
+          [&](const ast::var& v) { return v.index == depth; },
+          [&](const ast::abst& a) { return uses_binder(*a.body, depth + 1); },
+          [&](const ast::appl& a) { return uses_binder(*a.func, depth) || uses_binder(*a.arg, depth); },
+          [&](const ast::binop& b) { return uses_binder(*b.left, depth) || uses_binder(*b.right, depth); },
+          [&](const ast::ifexpr& i) {
+            return uses_binder(*i.cond, depth) || uses_binder(*i.then, depth) || uses_binder(*i.els, depth);
+          },
+          [&](const ast::fix& f) { return uses_binder(*f.body, depth); },
+          [&](const ast::tup& tu) {
+            for (const auto* el : tu.fields)
+              if (uses_binder(*el, depth)) return true;
+            return false;
+          },
+          [&](const ast::field& f) { return uses_binder(*f.base, depth); },
+          [&](const ast::ctor& c) { return c.payload && uses_binder(*c.payload, depth); },
+          [&](const ast::case_& cs) {
+            if (uses_binder(*cs.scrutinee, depth)) return true;
+            for (const auto& arm : cs.arms)
+              if (uses_binder(*arm.body, depth)) return true;
+            return false;
+          },
+          [](const auto&) { return false; },  // li_int / li_bool / li_unit
+      },
+      t);
+}
+
+// One binder was dropped outside t: renumber every var{k} with k > depth to
+// var{k-1}. Precondition: no var{k} with k == depth occurs (the dropped
+// binder was unused). Mutates t in place.
+void shift_down(ast::term& t, int depth) noexcept {
+  std::visit(overloaded{
+                 [&](ast::var& v) {
+                   if (v.index > depth) v.index -= 1;
+                 },
+                 [&](ast::abst& a) { shift_down(*a.body, depth + 1); },
+                 [&](ast::appl& a) {
+                   shift_down(*a.func, depth);
+                   shift_down(*a.arg, depth);
+                 },
+                 [&](ast::binop& b) {
+                   shift_down(*b.left, depth);
+                   shift_down(*b.right, depth);
+                 },
+                 [&](ast::ifexpr& i) {
+                   shift_down(*i.cond, depth);
+                   shift_down(*i.then, depth);
+                   shift_down(*i.els, depth);
+                 },
+                 [&](ast::fix& f) { shift_down(*f.body, depth); },
+                 [&](ast::tup& tu) {
+                   for (auto* el : tu.fields) shift_down(*el, depth);
+                 },
+                 [&](ast::field& f) { shift_down(*f.base, depth); },
+                 [&](ast::ctor& c) {
+                   if (c.payload) shift_down(*c.payload, depth);
+                 },
+                 [&](ast::case_& cs) {
+                   shift_down(*cs.scrutinee, depth);
+                   for (auto& arm : cs.arms) shift_down(*arm.body, depth);
+                 },
+                 [](auto&) {},
+             },
+             t);
+}
+
+// Fold binop(op, li_int, li_int) in place, mirroring the machine's eval
+// (machine.cpp) exactly: int results for + - * /, bool results for = != > <.
+// Returns true when the node was replaced by a literal. Division by zero and
+// int overflow are never folded (UB at runtime; leave the node untouched).
+bool fold_literal_binop(ast::term& t) noexcept {
+  auto& b = std::get<ast::binop>(t);
+  auto* l = std::get_if<ast::li_int>(b.left);
+  auto* r = std::get_if<ast::li_int>(b.right);
+  if (!l || !r) return false;
+  const int lv = l->value;
+  const int rv = r->value;
+  std::optional<ast::term> folded =
+      std::visit(overloaded{
+                     [&](tk::op_plus) -> std::optional<ast::term> {
+                       const long long res = static_cast<long long>(lv) + rv;
+                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
+                       return ast::term{ast::li_int{static_cast<int>(res)}};
+                     },
+                     [&](tk::op_minus) -> std::optional<ast::term> {
+                       const long long res = static_cast<long long>(lv) - rv;
+                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
+                       return ast::term{ast::li_int{static_cast<int>(res)}};
+                     },
+                     [&](tk::op_mul) -> std::optional<ast::term> {
+                       const long long res = static_cast<long long>(lv) * rv;
+                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
+                       return ast::term{ast::li_int{static_cast<int>(res)}};
+                     },
+                     [&](tk::op_div) -> std::optional<ast::term> {
+                       if (rv == 0) return std::nullopt;
+                       return ast::term{ast::li_int{lv / rv}};
+                     },
+                     [&](tk::op_eq) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv == rv}}; },
+                     [&](tk::op_ne) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv != rv}}; },
+                     [&](tk::op_gt) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv > rv}}; },
+                     [&](tk::op_lt) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv < rv}}; },
+                     [](auto) -> std::optional<ast::term> { return std::nullopt; },  // non-binop token
+                 },
+                 b.op);
+  if (folded.has_value()) t = std::move(*folded);
+  return folded.has_value();
+}
+
+// Bottom-up rewrite of t; returns the node that must replace t (t itself, or
+// a descendant of t). Children are rewritten before t is decided, so folds,
+// dead-branch eliminations, and newly exposed shakes cascade in one pass.
+// Never allocates; dropped nodes simply become garbage in the arena.
+ast::term* optimize_node(ast::term& t) noexcept {
+  if (auto* a = std::get_if<ast::abst>(&t)) {
+    a->body = optimize_node(*a->body);
+    return &t;
+  }
+  if (auto* a = std::get_if<ast::appl>(&t)) {
+    a->func = optimize_node(*a->func);
+    a->arg = optimize_node(*a->arg);
+    if (auto* ab = std::get_if<ast::abst>(a->func); ab && !uses_binder(*ab->body, 0)) {
+      shift_down(*ab->body, 0);  // x unused: drop the binder, renumber free vars
+      return ab->body;
+    }
+    return &t;
+  }
+  if (auto* b = std::get_if<ast::binop>(&t)) {
+    b->left = optimize_node(*b->left);
+    b->right = optimize_node(*b->right);
+    fold_literal_binop(t);
+    return &t;
+  }
+  if (auto* ie = std::get_if<ast::ifexpr>(&t)) {
+    ie->cond = optimize_node(*ie->cond);
+    ie->then = optimize_node(*ie->then);
+    ie->els = optimize_node(*ie->els);
+    if (auto* c = std::get_if<ast::li_bool>(ie->cond); c) return c->value ? ie->then : ie->els;
+    return &t;
+  }
+  if (auto* f = std::get_if<ast::fix>(&t)) {
+    f->body = optimize_node(*f->body);
+    return &t;
+  }
+  if (auto* tu = std::get_if<ast::tup>(&t)) {
+    for (auto*& el : tu->fields) el = optimize_node(*el);
+    return &t;
+  }
+  if (auto* f = std::get_if<ast::field>(&t)) {
+    f->base = optimize_node(*f->base);
+    return &t;
+  }
+  if (auto* c = std::get_if<ast::ctor>(&t)) {
+    if (c->payload) c->payload = optimize_node(*c->payload);
+    return &t;
+  }
+  if (auto* cs = std::get_if<ast::case_>(&t)) {
+    cs->scrutinee = optimize_node(*cs->scrutinee);
+    for (auto& arm : cs->arms) arm.body = optimize_node(*arm.body);
+    return &t;
+  }
+  return &t;  // var / li_int / li_bool / li_unit
+}
+
 class parser {
  public:
   explicit parser(const std::string& source)
@@ -156,6 +341,11 @@ class parser {
     if (curtok_.has_value())
       fail({curtok_->loc, "B001", "unexpected token '" + token_text(curtok_->t) + "' after the top-level expression",
             ""});
+    // pass 2: semantics-preserving AST optimization — tree-shakes unused
+    // bindings (re-assigning de Bruijn indices), folds constant expressions,
+    // and eliminates dead if-branches
+    auto* root = optimize_node(t.term);
+    if (root != &t.term) t.term = std::move(*root);
     return {std::move(t.term), std::move(actx_)};
   }
 
