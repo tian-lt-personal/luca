@@ -1,4 +1,4 @@
-## LUCA - CPP
+## LUCA
 
 
 ### Prerequisites
