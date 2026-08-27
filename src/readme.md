@@ -111,6 +111,18 @@ integer       ::= [0-9]+
 - Constructor names are globally unique and may not be shadowed by `let`/lambda/binding names.
 - A nested `match` inside a non-final arm body needs parens (the `|` separators would otherwise bind to the inner match).
 
+### Compilation pipeline (two passes)
+
+Parsing runs in two passes:
+
+1. **Pass 1 — syntax + semantics**: builds the full AST with every check (unbound names, types, `match` exhaustiveness, ...) and resolves names to de Bruijn indices. `let`, structured-binding, and `match` desugarings happen here. All diagnostics come from this pass.
+2. **Pass 2 — AST optimization** (semantics-preserving):
+   - **Unused-binding elimination (tree-shaking)**: `(\x : T . body) e` — what `let x : T = e in body` desugars to — is replaced by `body` when `x` is never referenced, and the surviving free-variable de Bruijn indices are renumbered. Unused `let` bindings and lambda parameters are dropped; a partially used structured binding keeps only the projections it needs (`let {a, b} = p in b` keeps `b` and drops `a`).
+   - **Constant folding**: `1 + 2` → `3`, `8 / 2` → `4`, `1 = 2` → `false` (the result literal has the operator's result type, `int` vs `bool`). Division by zero is never folded.
+   - **Dead-branch elimination**: `if true then A else B` → `A` (a literal condition).
+
+Pass 2 never changes behavior — the language is pure, so a dropped expression is unobservable — it only removes work. `lucacli -d` dumps the *optimized* tree. Match-arm payload closures and `fix` bodies keep their shapes (the machine applies arm bodies to the payload and expects `fix`'s body to be a lambda).
+
 ### Diagnostics
 
 Compilation errors are reported fail-fast, one at a time, in a clang-style format. The position is computed from byte offsets (1-based line and column):

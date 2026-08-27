@@ -326,4 +326,73 @@ TEST(machine_tests, variant_match_of_match) {
             7);
 }
 
+// -- pass-2 optimizer regression ----------------------------------------------
+// parse() runs the optimizer after building the AST; these tests pin that it
+// preserves evaluation semantics while tree-shaking unused bindings (with
+// de Bruijn renumbering) and folding constants.
+
+TEST(machine_tests, opt_unused_let) { EXPECT_EQ(std::get<int>(eval_ok("let x : int = 42 in 7").v), 7); }
+
+TEST(machine_tests, opt_unused_let_chain) {
+  EXPECT_EQ(std::get<int>(eval_ok("let x : int = 1 in let y : int = 2 in 3").v), 3);
+}
+
+TEST(machine_tests, opt_shake_outer_keep_inner) {
+  // \y is dropped; the free x is renumbered from index 1 to 0
+  EXPECT_EQ(std::get<int>(eval_ok("(\\x : int . (\\y : int . x) 7) 5").v), 5);
+}
+
+TEST(machine_tests, opt_shake_shadowed) {
+  // the outer \x is shadowed and unused; the inner \x survives
+  EXPECT_EQ(std::get<int>(eval_ok("(\\x : int . (\\x : int . x) 2) 1").v), 2);
+}
+
+TEST(machine_tests, opt_deep_shadowing_no_shake) {
+  EXPECT_EQ(std::get<int>(eval_ok("(\\x : int . \\x : int . x) 1 2").v), 2);
+}
+
+TEST(machine_tests, opt_shake_through_match_arm) {
+  // dropping \y renumbers x inside the arm closure (index 2 -> 1)
+  EXPECT_EQ(std::get<int>(eval_ok("type box = Box of int\n"
+                                  "(\\x : int . (\\y : int . match (Box 7) with Box n . n + x) 3) 5")
+                              .v),
+            12);
+}
+
+TEST(machine_tests, opt_shake_through_fix) {
+  // dropping \y renumbers x inside the fix body (index 3 -> 2)
+  EXPECT_EQ(std::get<int>(eval_ok("(\\x : int . (\\y : int . (fix (\\f : int -> int . \\n : int . n + x)) 7) 3) 5").v),
+            12);
+}
+
+TEST(machine_tests, opt_structured_binding_partial_drop) {
+  // only b is used; the a/c binders (and their field projections) are shaken
+  EXPECT_EQ(std::get<int>(eval_ok("let {a, b, c} = (1, 2, 3) in b").v), 2);
+}
+
+TEST(machine_tests, opt_structured_binding_all_dropped) {
+  EXPECT_EQ(std::get<int>(eval_ok("let {a, b} = (1, 2) in 5").v), 5);
+}
+
+TEST(machine_tests, opt_match_arm_unused_payload) {
+  // the payload closure stays (match arms are exempt from shaking)
+  EXPECT_EQ(std::get<int>(eval_ok("type box = Box of int\nmatch (Box 7) with Box n . 3").v), 3);
+}
+
+TEST(machine_tests, opt_fold_arith_chain) { EXPECT_EQ(std::get<int>(eval_ok("1 + 2 * 3 - 4").v), 3); }
+
+TEST(machine_tests, opt_fold_cmp_feeds_if) { EXPECT_EQ(std::get<int>(eval_ok("if 1 < 2 then 10 else 20").v), 10); }
+
+TEST(machine_tests, opt_fold_unary_minus_nested) { EXPECT_EQ(std::get<int>(eval_ok("- (2 + 3)").v), -5); }
+
+TEST(machine_tests, opt_fold_arg_not_shake) {
+  // the arg folds but x is used, so the binder survives
+  EXPECT_EQ(std::get<int>(eval_ok("(\\x : int . x + 2) (3 + 4)").v), 9);
+}
+
+TEST(machine_tests, opt_dead_branch_lazy) {
+  // the dead branch's 1 / 0 is never folded and never evaluated
+  EXPECT_EQ(std::get<int>(eval_ok("if false then 1 / 0 else 5").v), 5);
+}
+
 }  // namespace tests

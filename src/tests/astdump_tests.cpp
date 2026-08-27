@@ -40,13 +40,14 @@ TEST(astdump_tests, field_node_from_binding) {
             nlohmann::json::parse(R"({"field":{"base":{"var":{"index":0}},"index":0}})"));
 }
 TEST(astdump_tests, product_type_dump) {
-  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in 2");
+  // f is applied, so the binder (and its annotation) survives pass 2
+  auto r = parse_ok("let f : (int, bool) -> int = \\p : (int, bool) . 1 in f (1, true)");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"],
             nlohmann::json::parse(R"({"prod":{"fields":[{"type":{"int":{}}},{"type":{"bool":{}}}]}})"));
 }
 TEST(astdump_tests, type_ref_dump) {
-  auto r = parse_ok("type a = A of int\nlet f : a -> int = \\x : a . 1 in 2");
+  auto r = parse_ok("type a = A of int\nlet f : a -> int = \\x : a . 1 in f (A 1)");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"], nlohmann::json::parse(R"({"ref":{"name":"a"}})"));
 }
@@ -96,38 +97,32 @@ TEST(astdump_tests, bound_variable) {
 }
 
 TEST(astdump_tests, binop_add) {
+  // pass 2 folds constant binops into literals
   auto r = parse_ok("1 + 2");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "+");
-  EXPECT_EQ(j["binop"]["left"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
-  EXPECT_EQ(j["binop"]["right"], nlohmann::json::parse(R"({"li_int":{"value":2}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":3}})"));
 }
 TEST(astdump_tests, binop_mul) {
   auto r = parse_ok("3 * 4");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "*");
-  EXPECT_EQ(j["binop"]["left"], nlohmann::json::parse(R"({"li_int":{"value":3}})"));
-  EXPECT_EQ(j["binop"]["right"], nlohmann::json::parse(R"({"li_int":{"value":4}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":12}})"));
 }
 TEST(astdump_tests, binop_div) {
   auto r = parse_ok("8 / 2");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "/");
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":4}})"));
 }
 TEST(astdump_tests, binop_nested) {
   auto r = parse_ok("1 + 2 * 3");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "+");
-  EXPECT_EQ(j["binop"]["left"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
-  EXPECT_EQ(j["binop"]["right"]["binop"]["op"], "*");
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":7}})"));
 }
 
 TEST(astdump_tests, unary_minus) {
+  // -5 desugars to 0 - 5, which pass 2 folds into a negative literal
   auto r = parse_ok("-5");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "-");
-  EXPECT_EQ(j["binop"]["left"], nlohmann::json::parse(R"({"li_int":{"value":0}})"));
-  EXPECT_EQ(j["binop"]["right"], nlohmann::json::parse(R"({"li_int":{"value":5}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":-5}})"));
 }
 
 TEST(astdump_tests, application_single) {
@@ -165,14 +160,14 @@ TEST(astdump_tests, lambda_int) {
   EXPECT_EQ(ab["body"], nlohmann::json::parse(R"({"var":{"index":0}})"));
 }
 TEST(astdump_tests, lambda_bool) {
+  // x is unused: pass 2 shakes the application into the body literal
   auto r = parse_ok("(\\x : bool . true) false");
   auto j = dump(r.first);
-  const auto& ab = j["appl"]["func"]["abst"];
-  EXPECT_EQ(ab["param_type"], nlohmann::json::parse(R"({"bool":{}})"));
-  EXPECT_EQ(ab["body"], nlohmann::json::parse(R"({"li_bool":{"value":true}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_bool":{"value":true}})"));
 }
 TEST(astdump_tests, lambda_unit) {
-  auto r = parse_ok("let f : () -> int = \\x : () . 42 in 1");
+  // f is applied, so the binder (and its annotation) survives pass 2
+  auto r = parse_ok("let f : () -> int = \\x : () . 42 in f ()");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"]["abst"]["param_type"], nlohmann::json::parse(R"({"unit":{}})"));
 }
@@ -188,28 +183,22 @@ TEST(astdump_tests, lambda_nested) {
 }
 
 TEST(astdump_tests, if_simple) {
+  // pass 2 keeps only the taken branch of a constant if
   auto r = parse_ok("if true then 1 else 2");
   auto j = dump(r.first);
-  EXPECT_EQ(j["ifexpr"]["cond"], nlohmann::json::parse(R"({"li_bool":{"value":true}})"));
-  EXPECT_EQ(j["ifexpr"]["then"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
-  EXPECT_EQ(j["ifexpr"]["else"], nlohmann::json::parse(R"({"li_int":{"value":2}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":1}})"));
 }
 TEST(astdump_tests, nested_if) {
   auto r = parse_ok("if true then if false then 1 else 2 else 3");
   auto j = dump(r.first);
-  EXPECT_EQ(j["ifexpr"]["else"], nlohmann::json::parse(R"({"li_int":{"value":3}})"));
-  const auto& inner = j["ifexpr"]["then"];
-  EXPECT_EQ(inner["ifexpr"]["cond"], nlohmann::json::parse(R"({"li_bool":{"value":false}})"));
-  EXPECT_EQ(inner["ifexpr"]["then"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
-  EXPECT_EQ(inner["ifexpr"]["else"], nlohmann::json::parse(R"({"li_int":{"value":2}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":2}})"));
 }
 
 TEST(astdump_tests, parens_override_precedence) {
+  // (1 + 2) * 3 folds to 9
   auto r = parse_ok("(1 + 2) * 3");
   auto j = dump(r.first);
-  EXPECT_EQ(j["binop"]["op"], "*");
-  EXPECT_EQ(j["binop"]["left"]["binop"]["op"], "+");
-  EXPECT_EQ(j["binop"]["right"], nlohmann::json::parse(R"({"li_int":{"value":3}})"));
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":9}})"));
 }
 
 TEST(astdump_tests, lambda_applied) {
@@ -219,11 +208,11 @@ TEST(astdump_tests, lambda_applied) {
   EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":42}})"));
 }
 TEST(astdump_tests, lambda_in_if) {
+  // the if folds to its then-branch (a lambda), which is then applied
   auto r = parse_ok("(if true then \\x : int . x else \\x : int . 0) 1");
   auto j = dump(r.first);
-  const auto& ie = j["appl"]["func"]["ifexpr"];
-  EXPECT_EQ(ie["then"]["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
-  EXPECT_EQ(ie["else"]["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
+  EXPECT_EQ(j["appl"]["func"]["abst"]["param_type"], nlohmann::json::parse(R"({"int":{}})"));
+  EXPECT_EQ(j["appl"]["func"]["abst"]["body"], nlohmann::json::parse(R"({"var":{"index":0}})"));
 }
 TEST(astdump_tests, if_in_lambda) {
   auto r = parse_ok("(\\x : int . if x = 0 then 1 else 0) 1");
@@ -259,6 +248,7 @@ TEST(astdump_tests, full_roundtrip_shape) {
 }
 
 TEST(astdump_tests, full_json_output) {
+  // the if folds to its then-branch, then the lambda is applied
   auto r = parse_ok("(if true then \\x : int . x + 1 else \\x : int . 0) 1");
   auto j = dump(r.first);
   auto expected = nlohmann::json::parse(R"(
@@ -266,24 +256,13 @@ TEST(astdump_tests, full_json_output) {
       "appl": {
         "arg": {"li_int": {"value": 1}},
         "func": {
-          "ifexpr": {
-            "cond": {"li_bool": {"value": true}},
-            "then": {
-              "abst": {
-                "param_type": {"int": {}},
-                "body": {
-                  "binop": {
-                    "op": "+",
-                    "left": {"var": {"index": 0}},
-                    "right": {"li_int": {"value": 1}}
-                  }
-                }
-              }
-            },
-            "else": {
-              "abst": {
-                "param_type": {"int": {}},
-                "body": {"li_int": {"value": 0}}
+          "abst": {
+            "param_type": {"int": {}},
+            "body": {
+              "binop": {
+                "op": "+",
+                "left": {"var": {"index": 0}},
+                "right": {"li_int": {"value": 1}}
               }
             }
           }
@@ -461,6 +440,53 @@ TEST(astdump_tests, let_simple) {
     }
   )");
   EXPECT_EQ(j, expected);
+}
+
+// -- pass-2 optimizer shapes ---------------------------------------------------
+// parse() runs the optimizer after building the AST; these tests pin the
+// optimized shapes (shaken bindings with renumbered indices, folded literals).
+
+TEST(astdump_tests, shake_unused_let) {
+  auto r = parse_ok("let x : int = 1 in 2");
+  auto j = dump(r.first);
+  EXPECT_EQ(j, nlohmann::json::parse(R"({"li_int":{"value":2}})"));
+}
+
+TEST(astdump_tests, shake_structured_binding_chain) {
+  // b is unused: the \b application and its $t.field(1) arg are shaken away
+  auto r = parse_ok("let {a, b} = (1, true) in a");
+  auto j = dump(r.first);
+  auto expected = nlohmann::json::parse(R"(
+    {
+      "appl": {
+        "func": {
+          "abst": {
+            "param_type": {"prod": {"fields": [{"type": {"int": {}}}, {"type": {"bool": {}}}]}},
+            "body": {
+              "appl": {
+                "func": {
+                  "abst": {
+                    "param_type": {"int": {}},
+                    "body": {"var": {"index": 0}}
+                  }
+                },
+                "arg": {"field": {"base": {"var": {"index": 0}}, "index": 0}}
+              }
+            }
+          }
+        },
+        "arg": {"tup": {"fields": [{"value": {"li_int": {"value": 1}}}, {"value": {"li_bool": {"value": true}}}]}}
+      }
+    }
+  )");
+  EXPECT_EQ(j, expected);
+}
+
+TEST(astdump_tests, fold_arg_keeps_binder) {
+  auto r = parse_ok("(\\x : int . x + 1) (1 + 2)");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":3}})"));
+  EXPECT_EQ(j["appl"]["func"]["abst"]["body"]["binop"]["op"], "+");
 }
 
 TEST(astdump_tests, let_chain) {
