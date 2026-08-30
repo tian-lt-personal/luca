@@ -10,6 +10,7 @@
 #include <string_view>
 #include <variant>
 #include <vector>
+
 // luca
 #include "diag.hpp"
 #include "lexer.hpp"
@@ -96,14 +97,17 @@ struct sum_ctor {
 
 struct context {
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
+  std::vector<std::unique_ptr<std::pmr::monotonic_buffer_resource>> deps;
 };
 
 }  // namespace ast
 
 struct parse_err : std::runtime_error {
   diagnostic diag;
+  std::string src;
+  std::string filename;
   explicit parse_err(diagnostic d) : std::runtime_error{d.message}, diag{std::move(d)} {}
 };
 
 using parse_result = std::pair<ast::term, ast::context>;
-parse_result parse(const std::string& source);
+parse_result parse(const std::string& source, const std::string& path);

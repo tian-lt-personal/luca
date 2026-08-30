@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
   std::string source{std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{}};
 
   try {
-    auto result = parse(source);
+    auto result = parse(source, file);
     if (dump_mode) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {
@@ -71,7 +71,10 @@ int main(int argc, char** argv) {
       std::cout << '\n';
     }
   } catch (const parse_err& e) {
-    std::cerr << render(e.diag, source, file) << '\n';
+    // a diagnostic from an imported file carries its own source text and path
+    std::cerr << render(e.diag, e.src.empty() ? std::string_view{source} : std::string_view{e.src},
+                        e.src.empty() ? file : e.filename)
+              << '\n';
     return 1;
   } catch (const std::logic_error& e) {
     std::cerr << "error: " << e.what() << '\n';

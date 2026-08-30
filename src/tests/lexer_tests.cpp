@@ -49,7 +49,9 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = "string", .expected = tk::kw_string{}},
         test_case{.source = "fix", .expected = tk::kw_fix{}}, test_case{.source = "type", .expected = tk::kw_type{}},
         test_case{.source = "of", .expected = tk::kw_of{}}, test_case{.source = "match", .expected = tk::kw_match{}},
-        test_case{.source = "with", .expected = tk::kw_with{}}));
+        test_case{.source = "with", .expected = tk::kw_with{}},
+        test_case{.source = "import", .expected = tk::kw_import{}},
+        test_case{.source = "export", .expected = tk::kw_export{}}));
 INSTANTIATE_TEST_SUITE_P(id_tokens, lexer_theory,
                          ::testing::Values(
                              // valid: single characters

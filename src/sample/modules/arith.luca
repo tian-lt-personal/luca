@@ -1,0 +1,4 @@
+// arith.luca - a small arithmetic library module
+
+export let square = \x:int. x * x in
+export let cube = \x:int. square x * x in ()

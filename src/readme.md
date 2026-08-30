@@ -10,10 +10,19 @@ constructor   ::= id                                   (* nullary: Zero *)
                 | id "of" type                         (* payload: Num of int, Add of (expr, expr) *)
 
 term          ::= let-term
+                | import-term
+                | export-term
                 | if-term
                 | match-term
                 | lambda
                 | bin-term
+
+import-term   ::= "import" string "in" term
+
+export-term   ::= "export" "let" id (":" type)? "=" term "in" term
+                                                  (* like let; the binding is the module's
+                                                     contribution, the innermost body is
+                                                     ignored on import *)
 
 let-term      ::= "let" id (":" type)? "=" term "in" term
                                                   (* desugars to (\id : type . term) term;
@@ -89,7 +98,7 @@ integer       ::= [0-9]+
 - String literals (`"..."`) are lexed but not yet represented in the AST.
 - `fix (\f : τ . \x : σ . body)` is the fixed-point operator: the generator must have type `τ -> σ` with `τ` equal to `σ`, and the whole expression has type `σ`. The recursion variable is the generator's outermost parameter (`f`).
 - The `fix` operand must be a lambda whose body is a lambda (a "function generator").
-- `fix`, `type`, `of`, `match` and `with` are reserved words.
+- `fix`, `type`, `of`, `match`, `with`, `import` and `export` are reserved words.
 - Application requires a function in function position and an argument of the parameter type; both are rejected when known to be wrong.
 - The type system is STLC + `fix` (the Y combinator): no polymorphism, no type variables. Lambda parameters must always be annotated. One position infers instead: `let x = E` takes E's type. Everything else is validated against explicit annotations.
 
@@ -111,6 +120,17 @@ integer       ::= [0-9]+
 - Constructor names are globally unique and may not be shadowed by `let`/lambda/binding names.
 - A nested `match` inside a non-final arm body needs parens (the `|` separators would otherwise bind to the inner match).
 
+### Modules (import / export)
+
+- `export let name (: T)? = E in body` is a `let` whose binding is the module's **contribution**: when the file is imported elsewhere, `name` becomes available, bound to `E`. The innermost body (conventionally `()`) is just the let grammar's filler — it is the module's standalone value and is ignored on import.
+- `import "path" in body` parses the file (relative to the importing file's directory), merges its **type declarations**, and makes its exported names available in `body`. The module's definitions are *connected* into the importing program's AST (one program-wide AST, linked by pointer), so `body` can use them like any local binding: `import "a.luca" in let test = Num 1 in inc-foo test` evaluates to `2` when `a.luca` exports `inc-foo` as in the example above.
+- Importing a module also brings its own imports' exported names into scope — required so the imported definitions can be evaluated. Types are merged **transitively** the same way; a type declared by the same module (reached through different import paths, e.g. a diamond) is merged once, while a type/constructor name that conflicts with a local declaration or another imported module is an error.
+- An exported definition may reference the module's imports and its **earlier** exports — but nothing bound in the enclosing term: `let y = 5 in export let x = y in ()` is rejected (C026), because `y` would not exist in the importing program. Exports nest into a chain (`export let a = ... in export let b = a + 1 in ...`), and `export` cannot wrap a structured binding.
+- A module cannot import itself, directly or transitively (C010/C026's sibling B010 reports the cycle).
+- `import` is an expression: `f import "a" in x` parses as `f` applied to the whole import term.
+- Type declarations still precede the term and cannot reference imported types; annotations and definitions in the term can.
+- The optimization pass runs **once, on the final program**: imported modules are parsed unoptimized (an export may be used only by an importer), and the whole connected AST is then tree-shaken/folded as one — unused imported bindings disappear (`import "a" in 5` collapses to `5`).
+
 ### Compilation pipeline (two passes)
 
 Parsing runs in two passes:
@@ -121,7 +141,7 @@ Parsing runs in two passes:
    - **Constant folding**: `1 + 2` → `3`, `8 / 2` → `4`, `1 = 2` → `false` (the result literal has the operator's result type, `int` vs `bool`). Division by zero is never folded.
    - **Dead-branch elimination**: `if true then A else B` → `A` (a literal condition).
 
-Pass 2 never changes behavior — the language is pure, so a dropped expression is unobservable — it only removes work. `lucacli -d` dumps the *optimized* tree. Match-arm payload closures and `fix` bodies keep their shapes (the machine applies arm bodies to the payload and expects `fix`'s body to be a lambda).
+Pass 2 never changes behavior — the language is pure, so a dropped expression is unobservable — it only removes work. It runs once, on the final program: imported modules (see Modules) are parsed unoptimized, because an export may be used only by an importer. `lucacli -d` dumps the *optimized* tree. Match-arm payload closures and `fix` bodies keep their shapes (the machine applies arm bodies to the payload and expects `fix`'s body to be a lambda).
 
 ### Diagnostics
 
@@ -148,7 +168,9 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`, `with`) or a binding/constructor name |
 | B006 | unexpected end of input |
 | B007 | `fix` operand is not a lambda whose body is a lambda |
+| B008 | cannot open imported file |
 | B009 | malformed `type` declaration |
+| B010 | import cycle |
 | C001 | unbound identifier |
 | C002 | applying a value that is not a function |
 | C003 | argument/parameter type mismatch in an application |
@@ -170,3 +192,4 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C023 | `match` arms have different result types |
 | C024 | constructor argument does not match its payload type |
 | C025 | binding a constructor name |
+| C026 | exported definition references a name bound outside the module scope (or `export` is nested in an exported definition / wraps a structured binding) |

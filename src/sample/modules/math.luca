@@ -1,0 +1,7 @@
+// math.luca - imports arith and exports functions built on it
+//
+// Importing a module also brings its own imports' exports into scope
+// (transitively), so `square` is visible here.
+
+import "arith.luca" in
+export let sum-of-squares = \a:int. \b:int. square a + square b in ()

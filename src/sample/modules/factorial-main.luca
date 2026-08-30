@@ -1,0 +1,4 @@
+// factorial-main.luca - uses the factorial module
+
+import "factorial.luca" in
+fact 10
