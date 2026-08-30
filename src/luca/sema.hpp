@@ -27,6 +27,7 @@ class sema {
   int resolve_binding_index(src_range loc, std::string_view name) const;
   void push_binding(std::string_view name, ast::type ty);
   void pop_binding();
+  size_t binding_count() const noexcept { return bindings_.size(); }
 
   std::optional<ast::type> type_of(const ast::term& t) noexcept;
 
@@ -36,10 +37,15 @@ class sema {
   std::optional<ctor_info> lookup_ctor(std::string_view name) const;
   const std::vector<ast::sum_ctor>* lookup_type(std::string_view name) const;  // nullptr if unknown
 
+  // declaring module of an imported type ("" when never imported)
+  std::string type_provenance(std::string_view name) const;
+  void set_type_provenance(std::string name, std::string from_path);
+
  private:
   ast::context* ctx_;
   std::vector<std::string_view> bindings_;
   std::vector<ast::type> binding_types_;
   std::map<std::string, std::vector<ast::sum_ctor>> types_;
   std::map<std::string, ctor_info> ctors_;
+  std::map<std::string, std::string> type_prov_;
 };

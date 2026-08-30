@@ -6,6 +6,7 @@ add_executable(luca_tests
   astdump_tests.cpp
   machine_tests.cpp
   diag_tests.cpp
+  module_tests.cpp
 )
 
 target_link_libraries(luca_tests PRIVATE

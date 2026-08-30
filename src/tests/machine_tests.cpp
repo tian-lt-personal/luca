@@ -8,7 +8,7 @@ namespace tests {
 namespace {
 
 auto eval_ok(const std::string& src) {
-  auto r = parse(src);
+  auto r = parse(src, "");
   return eval(r.first);
 }
 
@@ -131,7 +131,7 @@ TEST(machine_tests, fix_y_combinator) {
 // -- closure rejection at top level ------------------------------------------
 
 TEST(machine_tests, closure_rejected_at_top_level) {
-  EXPECT_THROW(parse("\\f : int -> int . \\x : int . f x"), parse_err);
+  EXPECT_THROW(parse("\\f : int -> int . \\x : int . f x", ""), parse_err);
 }
 
 // -- product types (tuples) ---------------------------------------------------

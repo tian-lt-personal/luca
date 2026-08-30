@@ -167,6 +167,15 @@ void sema::add_ctor(src_range loc, std::string_view type_name, std::string_view 
 
 bool sema::is_declared_type(std::string_view name) const { return types_.contains(std::string{name}); }
 
+std::string sema::type_provenance(std::string_view name) const {
+  auto it = type_prov_.find(std::string{name});
+  return it == type_prov_.end() ? std::string{} : it->second;
+}
+
+void sema::set_type_provenance(std::string name, std::string from_path) {
+  type_prov_.emplace(std::move(name), std::move(from_path));
+}
+
 std::optional<ctor_info> sema::lookup_ctor(std::string_view name) const {
   auto it = ctors_.find(std::string{name});
   if (it == ctors_.end()) return std::nullopt;

@@ -67,6 +67,8 @@ lex_result lexer::next() noexcept {
     "of"        { return token_span{tk::kw_of{}, cur_span()}; }
     "match"     { return token_span{tk::kw_match{}, cur_span()}; }
     "with"      { return token_span{tk::kw_with{}, cur_span()}; }
+    "import"    { return token_span{tk::kw_import{}, cur_span()}; }
+    "export"    { return token_span{tk::kw_export{}, cur_span()}; }
 
     id         { return token_span{tk::id{.name = lexeme()}, cur_span()}; }
     number     { return token_span{tk::li_int{.value = lexeme()}, cur_span()}; }

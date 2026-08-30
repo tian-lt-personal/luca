@@ -1,0 +1,9 @@
+// shapes-main.luca - uses the shapes module
+//
+// `import "shapes.luca" in body` makes the module's types, constructors and
+// exports available in body.
+
+import "shapes.luca" in
+let c = Circle 5 in
+let r = Rect (3, 4) in
+(total-area c r) + area (bigger c 1)

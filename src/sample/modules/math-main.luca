@@ -1,0 +1,6 @@
+// math-main.luca - uses the math module (which imports arith)
+
+import "math.luca" in
+let a = 3 in
+let b = 4 in
+sum-of-squares a b + cube a

@@ -1,6 +1,9 @@
 // std
 #include <cassert>
 #include <climits>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 // luca
@@ -18,7 +21,7 @@ constexpr bool holds_one_of(const token& tok) noexcept {
 
 constexpr bool is_start_of_expr(const token& tk) noexcept {
   return holds_one_of<tk::id, tk::li_int, tk::kw_lambda, tk::kw_if, tk::kw_match, tk::kw_true, tk::kw_false,
-                      tk::lparen>(tk);
+                      tk::kw_import, tk::lparen>(tk);
 }
 
 constexpr int prec_unary_minus = 40;
@@ -54,6 +57,47 @@ struct parsed {
   ast::term term;
   src_range loc;
 };
+
+struct module_entry {
+  std::string name;  // copied: push_binding stores views into this module's source
+  ast::term* def;    // the desugared let's arg, in this module's arena
+};
+
+// a type declaration tagged with its declaring module, for provenance-based merge
+struct module_type_decl {
+  std::string declaring_path;
+  std::string name;
+  std::vector<ast::sum_ctor> ctors;
+};
+
+struct module_result {
+  ast::term term;                      // the module's own (unoptimized) term
+  ast::context actx;                   // retained by importers
+  std::vector<module_entry> skeleton;  // ambient binding chain, outermost first
+  std::vector<module_type_decl> types;
+};
+
+// canonical identity for cycle detection and type-provenance keys (weakly_canonical when missing)
+std::string canonical_path(const std::filesystem::path& p) {
+  std::error_code ec;
+  auto c = std::filesystem::canonical(p, ec);
+  if (ec) c = std::filesystem::weakly_canonical(p);
+  return c.generic_string();
+}
+
+bool same_path(std::string_view a, std::string_view b) noexcept {
+#ifdef _WIN32
+  // Windows paths compare case-insensitively
+  auto fold = [](std::string s) {
+    for (char& ch : s)
+      if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+    return s;
+  };
+  return fold(std::string{a}) == fold(std::string{b});
+#else
+  return a == b;
+#endif
+}
 
 [[noreturn]] void fail(diagnostic d) { throw parse_err{std::move(d)}; }
 
@@ -98,6 +142,8 @@ std::string token_text(const token& t) {
                         [](const tk::kw_of&) { return std::string{"of"}; },
                         [](const tk::kw_match&) { return std::string{"match"}; },
                         [](const tk::kw_with&) { return std::string{"with"}; },
+                        [](const tk::kw_import&) { return std::string{"import"}; },
+                        [](const tk::kw_export&) { return std::string{"export"}; },
                         [](const tk::op_plus&) { return std::string{"+"}; },
                         [](const tk::op_minus&) { return std::string{"-"}; },
                         [](const tk::op_mul&) { return std::string{"*"}; },
@@ -329,24 +375,22 @@ ast::term* optimize_node(ast::term& t) noexcept {
 
 class parser {
  public:
-  explicit parser(const std::string& source)
-      : lex_(source),
+  explicit parser(const std::string& source, std::string path, std::vector<std::string>& import_stack)
+      : source_(source),
+        self_path_(path.empty() ? std::string{} : canonical_path(path)),
+        import_stack_(import_stack),
+        lex_(source),
         actx_{std::make_unique<std::pmr::monotonic_buffer_resource>()},
         sema_(actx_),
         curtok_(lex_.next()),
         nextok_(lex_.next()) {}
-  parse_result run_pass() && {
+  module_result run_pass() && {
     while (curtok_.has_value() && std::holds_alternative<tk::kw_type>(curtok_->t)) parse_type_decl();
-    auto t = parse_tem();
+    auto t = parse_term();
     if (curtok_.has_value())
       fail({curtok_->loc, "B001", "unexpected token '" + token_text(curtok_->t) + "' after the top-level expression",
             ""});
-    // pass 2: semantics-preserving AST optimization — tree-shakes unused
-    // bindings (re-assigning de Bruijn indices), folds constant expressions,
-    // and eliminates dead if-branches
-    auto* root = optimize_node(t.term);
-    if (root != &t.term) t.term = std::move(*root);
-    return {std::move(t.term), std::move(actx_)};
+    return {std::move(t.term), std::move(actx_), std::move(skeleton_), std::move(types_)};
   }
 
  private:
@@ -362,6 +406,9 @@ class parser {
     advance();
     expect<tk::op_eq>("'='");
     sema_.declare_type(start, name);
+    module_type_decl decl;
+    decl.declaring_path = self_path_;
+    decl.name = std::string{name};
     for (;;) {
       check_curtok();
       auto* cid = std::get_if<tk::id>(&peek());
@@ -376,15 +423,18 @@ class parser {
         advance();
         payload = parse_type();
       }
-      sema_.add_ctor(cname_loc, name, cname, std::move(payload));
+      // add_ctor copies the payload; keep one for the module's decl list
+      sema_.add_ctor(cname_loc, name, cname, payload);
+      decl.ctors.push_back(ast::sum_ctor{std::string{cname}, std::move(payload)});
       if (curtok_.has_value() && std::holds_alternative<tk::op_bar>(curtok_->t)) {
         advance();
         continue;
       }
       break;
     }
+    types_.push_back(std::move(decl));
   }
-  parsed parse_tem() {
+  parsed parse_term() {
     auto t = parse_expr(0);
     if (auto ty = sema_.type_of(t.term); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
       fail({t.loc, "C009", "top-level expression must have a value type, got '" + type_name(*ty) + "'",
@@ -435,10 +485,12 @@ class parser {
     }
     return std::visit(overloaded{
                           [this](tk::kw_lambda) { return parse_lambda(); },
-                          [this](tk::kw_let) { return parse_let(); },
+                          [this](tk::kw_let) { return parse_let(nullptr); },
                           [this](tk::kw_if) { return parse_if(); },
                           [this](tk::kw_match) { return parse_match(); },
                           [this](tk::kw_fix) { return parse_fix(); },
+                          [this](tk::kw_import) { return parse_import(); },
+                          [this](tk::kw_export) { return parse_export(); },
                           [this](tk::lparen) { return parse_tuple_literal(); },
                           [this](tk::op_minus) -> parsed {
                             auto loc = curtok_->loc;
@@ -462,6 +514,16 @@ class parser {
                             if (auto info = sema_.lookup_ctor(id.name); info.has_value())
                               return parse_ctor(id, *info, loc);
                             auto idx = sema_.resolve_binding_index(loc, id.name);
+                            // C026: a def may only reference the module's chain or its own binders
+                            if (in_export_def_) {
+                              size_t pos = sema_.binding_count() - 1 - static_cast<size_t>(idx);
+                              if (export_m_ <= pos && pos < export_B_)
+                                fail({loc, "C026",
+                                      "exported definition references '" + std::string{id.name} +
+                                          "', which is bound outside the module scope",
+                                      "an exported definition may only reference the module's imports and "
+                                      "earlier exports"});
+                            }
                             return {ast::term{ast::var{idx}}, loc};
                           },
                           [loc](tk::li_int lit) -> parsed {
@@ -777,11 +839,17 @@ class parser {
     return {ast::term{ast::case_{.scrutinee = make_term(actx_, std::move(scrutinee.term)), .arms = std::move(arms)}},
             {start.begin, last_loc.end}};
   }
-  parsed parse_let() {
+  // exported != nullptr: report the binding back for the module skeleton
+  parsed parse_let(module_entry* exported) {
     auto start = curtok_->loc;
     advance();
     check_curtok();
-    if (std::holds_alternative<tk::lbrace>(curtok_->t)) return parse_let_binding(start);
+    if (std::holds_alternative<tk::lbrace>(curtok_->t)) {
+      if (exported)
+        fail({curtok_->loc, "C026", "cannot export a structured binding",
+              "export each name with its own 'export let'"});
+      return parse_let_binding(start);
+    }
 
     auto* id = std::get_if<tk::id>(&peek());
     if (!id)
@@ -790,6 +858,7 @@ class parser {
     auto name = id->name;
     auto name_loc = curtok_->loc;
     advance();
+    if (exported) exported->name = std::string{name};
     if (sema_.lookup_ctor(name).has_value())
       fail({name_loc, "C025", "cannot bind '" + std::string{name} + "': it is a constructor name",
             "use a different name"});
@@ -811,17 +880,158 @@ class parser {
             "cannot annotate a value of type '" + type_name(ty) + "' as '" + type_name(ann) + "'",
             "the value must have the annotated type"});
     if (!annotated) ann = std::move(ty);
+    auto* def_node = make_term(actx_, std::move(bound_expr.term));
+    if (exported) {
+      // record the completed def; the body (next chain level) may hold nested exports
+      exported->def = def_node;
+      in_export_def_ = false;
+      skeleton_.push_back(std::move(*exported));
+    }
 
     expect<tk::kw_in>("'in'");
     sema_.push_binding(name, ann);
     auto body = parse_expr(0);
     sema_.pop_binding();
+    // the innermost expression of an export chain is ignored on import; it must be ()
+    if (exported) {
+      if (auto bty = sema_.type_of(body.term); bty.has_value() && !std::holds_alternative<ast::type_unit>(*bty))
+        fail({body.loc, "C027",
+              "the body of an exported definition must be '()', got '" + type_name(*bty) + "'",
+              "the innermost expression of an export chain is ignored on import; end it with ()"});
+    }
 
     return {ast::term{ast::appl{
                 .func = make_term(actx_, ast::term{ast::abst{.param_type = std::move(ann),
                                                              .body = make_term(actx_, std::move(body.term))}}),
-                .arg = make_term(actx_, std::move(bound_expr.term))}},
+                .arg = def_node}},
             {start.begin, body.loc.end}};
+  }
+  // export let ...: like `let`, and the binding joins the module's skeleton
+  parsed parse_export() {
+    auto start = curtok_->loc;
+    advance();  // 'export'
+    check_curtok();
+    if (in_export_def_)
+      fail({start, "C026", "cannot nest an export inside an exported definition",
+            "an export must be at the module's top level"});
+    if (!std::holds_alternative<tk::kw_let>(curtok_->t))
+      fail({curtok_->loc, "B005", "expected 'let' after 'export', found " + found_text(curtok_),
+            "write export let name : type = expr in body"});
+    module_entry entry;
+    in_export_def_ = true;
+    export_m_ = skeleton_.size();
+    export_B_ = sema_.binding_count();
+    return parse_let(&entry);
+  }
+  // import "path" in body: parse the module unoptimized (importers may use
+  // its exports), merge its types, and lift its skeleton as binders
+  parsed parse_import() {
+    auto start = curtok_->loc;
+    advance();  // 'import'
+    check_curtok();
+    auto* s = std::get_if<tk::li_str>(&peek());
+    if (!s)
+      fail({curtok_->loc, "B005", "expected an imported file path, found " + found_text(curtok_),
+            "write import \"file.luca\" in body"});
+    auto path_loc = curtok_->loc;
+    std::string raw_path{s->raw};
+    advance();
+    expect<tk::kw_in>("'in'");
+
+    // relative to this file's directory (CWD when unknown)
+    auto base = self_path_.empty() ? std::filesystem::path{} : std::filesystem::path{self_path_}.parent_path();
+    auto resolved = base / std::filesystem::path{raw_path};
+    auto canonical = canonical_path(resolved);
+    for (const auto& in_progress : import_stack_)
+      if (same_path(in_progress, canonical)) {
+        std::string chain;
+        for (const auto& p : import_stack_) chain += p + " -> ";
+        chain += canonical;
+        fail({path_loc, "B010", "import cycle detected: " + chain,
+              "a module cannot import itself, directly or transitively"});
+      }
+
+    // reject non-regular files up front (an empty import path resolves to the importing file's directory)
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(resolved, ec))
+      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
+            "check that the file exists next to the importing file"});
+    // stream exceptions as the backstop for I/O errors during open/read
+    std::ifstream ifs;
+    ifs.exceptions(std::ios::failbit | std::ios::badbit);
+    std::string content;
+    try {
+      ifs.open(resolved);
+      content.assign(std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{});
+    } catch (const std::ios_base::failure&) {
+      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
+            "check that the file exists next to the importing file"});
+    }
+
+    import_stack_.push_back(canonical);
+    module_result imported;
+    try {
+      imported = parser{content, resolved.generic_string(), import_stack_}.run_pass();
+    } catch (parse_err& e) {
+      import_stack_.pop_back();
+      if (e.src.empty()) {  // deepest wins: attach the file the diagnostic refers to
+        e.src = std::move(content);
+        e.filename = raw_path;
+      }
+      throw;
+    }
+    import_stack_.pop_back();
+
+    // retain the module's arenas (its own and its imports'): the lifted defs live in them
+    actx_.deps.push_back(std::move(imported.actx.arena));
+    for (auto& dep : imported.actx.deps) actx_.deps.push_back(std::move(dep));
+
+    // merge the transitive type declarations; dedupe by provenance (diamonds)
+    for (const auto& td : imported.types) {
+      if (sema_.is_declared_type(td.name)) {
+        auto prov = sema_.type_provenance(td.name);
+        if (!prov.empty() && same_path(prov, td.declaring_path)) continue;  // diamond
+        fail({path_loc, "C010",
+              "importing '" + raw_path + "' introduces type '" + td.name +
+                  "', which conflicts with an existing declaration",
+              "the name is declared locally or in another imported module"});
+      }
+      sema_.declare_type(path_loc, td.name);
+      sema_.set_type_provenance(td.name, td.declaring_path);
+      for (const auto& c : td.ctors) {
+        if (sema_.lookup_ctor(c.name).has_value())
+          fail({path_loc, "C019",
+                "importing '" + raw_path + "' introduces constructor '" + c.name +
+                    "', which conflicts with an existing declaration",
+                "constructor names are globally unique"});
+        sema_.add_ctor(path_loc, td.name, c.name, c.payload_ty);
+      }
+    }
+    types_.insert(types_.end(), std::make_move_iterator(imported.types.begin()),
+                  std::make_move_iterator(imported.types.end()));
+
+    // lift: type each def before pushing its binder (defs may reference earlier ones)
+    std::vector<ast::type> slot_tys;
+    slot_tys.reserve(imported.skeleton.size());
+    for (const auto& entry : imported.skeleton) {
+      auto ty = sema_.type_of(*entry.def);
+      if (!ty.has_value()) throw std::logic_error{"imported definition cannot be typed"};
+      slot_tys.push_back(std::move(*ty));
+      sema_.push_binding(entry.name, slot_tys.back());
+    }
+    // join the ambient chain before the body parses; imports in export defs stay local
+    if (!in_export_def_)
+      skeleton_.insert(skeleton_.end(), imported.skeleton.begin(), imported.skeleton.end());
+    auto body = parse_expr(0);
+    for (size_t i = 0; i < imported.skeleton.size(); ++i) sema_.pop_binding();
+
+    ast::term chain = std::move(body.term);
+    for (size_t i = imported.skeleton.size(); i-- > 0;)
+      chain = ast::term{ast::appl{
+          .func = make_term(actx_, ast::term{ast::abst{.param_type = slot_tys[i],
+                                                       .body = make_term(actx_, std::move(chain))}}),
+          .arg = imported.skeleton[i].def}};
+    return {std::move(chain), {start.begin, body.loc.end}};
   }
   // let {a, b} = E in body  desugars to  let $t = E in let a = $t.field(0) in
   // let b = $t.field(1) in body; $t cannot collide with user ids ('$' is not lexed)
@@ -954,6 +1164,15 @@ class parser {
   }
 
  private:
+  const std::string& source_;
+  std::string self_path_;                  // canonical ("" = unknown)
+  std::vector<std::string>& import_stack_;  // canonical paths in progress (cycle detection)
+  bool in_export_def_ = false;
+  size_t export_m_ = 0;                    // C026: skeleton size at the export def's start
+  size_t export_B_ = 0;                    // C026: binding count at the export def's start
+  std::vector<module_entry> skeleton_;     // ambient binding chain, outermost first
+  std::vector<module_type_decl> types_;    // transitive type declarations
+
   lexer lex_;
   ast::context actx_;
   sema sema_;
@@ -963,4 +1182,14 @@ class parser {
 
 }  // namespace
 
-parse_result parse(const std::string& source) { return parser{source}.run_pass(); }
+parse_result parse(const std::string& source, const std::string& path) {
+  // seed the import stack with this file so a self-import is a detectable cycle
+  std::vector<std::string> import_stack;
+  if (!path.empty()) import_stack.push_back(canonical_path(path));
+  auto r = parser{source, path, import_stack}.run_pass();
+  // pass 2: the final program only — imported modules stay unoptimized, since
+  // their exports may be referenced from other TUs
+  auto* root = optimize_node(r.term);
+  if (root != &r.term) r.term = std::move(*root);
+  return {std::move(r.term), std::move(r.actx)};
+}
