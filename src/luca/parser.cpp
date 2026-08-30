@@ -951,7 +951,12 @@ class parser {
               "a module cannot import itself, directly or transitively"});
       }
 
-    // stream exceptions: missing → open throws, directory/unreadable → read throws (B008)
+    // reject non-regular files up front (an empty import path resolves to the importing file's directory)
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(resolved, ec))
+      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
+            "check that the file exists next to the importing file"});
+    // stream exceptions as the backstop for I/O errors during open/read
     std::ifstream ifs;
     ifs.exceptions(std::ios::failbit | std::ios::badbit);
     std::string content;
