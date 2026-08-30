@@ -40,7 +40,11 @@ std::string read(const std::filesystem::path& p) {
 }
 
 // parse a file on disk, returning the parse result
-parse_result parse_file(const std::filesystem::path& p) { return parse(read(p), p.generic_string()); }
+parse_result parse_file(const std::filesystem::path& p) { return parse(read(p), p.generic_string(), ""); }
+
+parse_result parse_file_with(const std::filesystem::path& p, const std::string& stdlib_dir) {
+  return parse(read(p), p.generic_string(), stdlib_dir);
+}
 
 int eval_int(const std::filesystem::path& p) { return std::get<int>(eval(parse_file(p).first).v); }
 
@@ -167,7 +171,7 @@ TEST(module_tests, import_from_subdirectory) {
 TEST(module_tests, adjacent_type_decls_no_separator) {
   // type declarations are self-delimiting: no `;` is needed between them or
   // before the term
-  auto r = parse("type a = A type b = B let x = 1 in x", "");
+  auto r = parse("type a = A type b = B let x = 1 in x", "", "");
   EXPECT_EQ(std::get<int>(eval(r.first).v), 1);
 }
 
@@ -294,9 +298,17 @@ TEST(module_tests, c019_ctor_clash) {
   }
 }
 
-TEST(module_tests, c026_enclosing_let_binder) {
+TEST(module_tests, private_let_before_first_export_ok) {
+  // a chain let before any export is private; the export may reference it
+  auto dir = scratch();
+  write(dir, "m.luca", "let y = 5 in export let x = y in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "root.luca", "import \"m.luca\" in x\n")), 5);
+}
+
+TEST(module_tests, c026_lambda_enclosed_let_binder) {
+  // a let inside a lambda is not a module-chain name: still rejected
   try {
-    parse("let y = 5 in export let x = y in ()", "");
+    parse("\\z:int. let y = 5 in export let x = y in ()", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C026");
@@ -305,7 +317,7 @@ TEST(module_tests, c026_enclosing_let_binder) {
 
 TEST(module_tests, c026_enclosing_lambda_binder) {
   try {
-    parse("\\z:int. export let x = z in ()", "");
+    parse("\\z:int. export let x = z in ()", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C026");
@@ -314,7 +326,7 @@ TEST(module_tests, c026_enclosing_lambda_binder) {
 
 TEST(module_tests, c026_nested_export_inside_export_def) {
   try {
-    parse("export let a = 1 in export let b = (\\x:int. export let c = x in ()) in ()", "");
+    parse("export let a = 1 in export let b = (\\x:int. export let c = x in ()) in ()", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C026");
@@ -323,7 +335,7 @@ TEST(module_tests, c026_nested_export_inside_export_def) {
 
 TEST(module_tests, c026_export_structured_binding) {
   try {
-    parse("export let {a, b} = (1, 2) in a", "");
+    parse("export let {a, b} = (1, 2) in a", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C026");
@@ -332,13 +344,150 @@ TEST(module_tests, c026_export_structured_binding) {
 
 TEST(module_tests, c026_negative_export_at_module_level_ok) {
   // exports chain normally: each is inside the previous one's body, not its def
-  auto r = parse("export let a = 1 in export let b = 2 in ()", "");
+  auto r = parse("export let a = 1 in export let b = 2 in ()", "", "");
   EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(r.first).v));
+}
+
+// -- private names in the export chain (no linkage) -----------------------------
+
+TEST(module_tests, private_let_in_chain_user_example) {
+  // a plain let in the export chain is private: exports may reference it, importers cannot
+  auto dir = scratch();
+  write(dir, "m.luca", "export let a = 1 in let b = 2 in export let c = b + 1 in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "use-a.luca", "import \"m.luca\" in a\n")), 1);
+  EXPECT_EQ(eval_int(write(dir, "use-c.luca", "import \"m.luca\" in c\n")), 3);
+  try {
+    parse_file(write(dir, "use-b.luca", "import \"m.luca\" in b\n"));
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "C001");
+  }
+  // the module also evaluates standalone: () is the value
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(parse_file(dir / "m.luca").first).v));
+}
+
+TEST(module_tests, private_let_positions_preserved) {
+  // lifted defs keep their indices across the private binder
+  auto dir = scratch();
+  write(dir, "m.luca", "export let a = 1 in let b = 2 in export let f = \\x:int. a + b + x in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "root.luca", "import \"m.luca\" in f 10\n")), 13);
+}
+
+TEST(module_tests, private_let_references_import) {
+  auto dir = scratch();
+  write(dir, "c.luca", "export let cv = 10 in ()\n");
+  write(dir, "m.luca", "import \"c.luca\" in let priv = cv in export let x = priv + 1 in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "root.luca", "import \"m.luca\" in x\n")), 11);
+  try {
+    parse_file(write(dir, "bad.luca", "import \"m.luca\" in priv\n"));
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "C001");
+  }
+}
+
+TEST(module_tests, importer_let_shadows_private_name) {
+  // the importer's own `b` is unaffected by m's private `b`
+  auto dir = scratch();
+  write(dir, "m.luca", "export let a = 1 in let b = 2 in export let c = b + 1 in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "root.luca", "import \"m.luca\" in let b = 99 in b\n")), 99);
+}
+
+TEST(module_tests, same_private_name_in_two_tus) {
+  // each TU's private `b` keeps its own binder (unique lifted names)
+  auto dir = scratch();
+  write(dir, "m1.luca", "export let a = 1 in let b = 2 in export let c1 = b + 1 in ()\n");
+  write(dir, "m2.luca", "export let a = 3 in let b = 4 in export let c2 = b + 1 in ()\n");
+  EXPECT_EQ(eval_int(write(dir, "root.luca", "import \"m1.luca\" in import \"m2.luca\" in c1 + c2\n")), 8);
+}
+
+TEST(module_tests, lambda_internal_let_not_lifted) {
+  // y is inside the lambda, not on the module chain: the chain keeps exactly one binder
+  auto r = parse("let a = 1 in (\\z:int. let y = 2 in z + y) a", "", "");
+  auto j = dump(r.first);
+  EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
+  EXPECT_EQ(j["appl"]["func"]["abst"]["body"]["appl"]["arg"],
+            nlohmann::json::parse(R"({"var":{"index":0}})"));
+}
+
+// -- built-in library search (stdlib_dir) ---------------------------------------
+
+TEST(module_tests, stdlib_fallback_resolves) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  write(lib, "std.luca", "export let std-abs-int = \\a:int. if a < 0 then 0 - a else a in ()\n");
+  auto p = write(dir, "root.luca", "import \"std.luca\" in std-abs-int (-5)\n");
+  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 5);
+}
+
+TEST(module_tests, stdlib_importer_relative_wins) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  write(dir, "std.luca", "export let std-abs-int = \\a:int. a + 100 in ()\n");
+  write(lib, "std.luca", "export let std-abs-int = \\a:int. if a < 0 then 0 - a else a in ()\n");
+  auto p = write(dir, "root.luca", "import \"std.luca\" in std-abs-int 1\n");
+  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 101);
+}
+
+TEST(module_tests, stdlib_module_imports_sibling) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  write(lib, "std2.luca", "export let std-double-int = \\n:int. n + n in ()\n");
+  write(lib, "std.luca",
+        "import \"std2.luca\" in export let std-quad-int = \\n:int. std-double-int (std-double-int n) in ()\n");
+  auto p = write(dir, "root.luca", "import \"std.luca\" in std-quad-int 3\n");
+  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 12);
+}
+
+TEST(module_tests, stdlib_self_import_cycle_b010) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  write(lib, "std.luca", "import \"std.luca\" in 1\n");
+  auto p = write(dir, "root.luca", "import \"std.luca\" in 1\n");
+  try {
+    parse_file_with(p, lib.generic_string());
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "B010");
+  }
+}
+
+TEST(module_tests, stdlib_missing_both_b008_hint) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  auto p = write(dir, "root.luca", "import \"nope.luca\" in 1\n");
+  try {
+    parse_file_with(p, lib.generic_string());
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "B008");
+    EXPECT_NE(e.diag.hint.find("built-in library"), std::string::npos);
+    EXPECT_NE(e.diag.hint.find(lib.generic_string()), std::string::npos);
+  }
+}
+
+TEST(module_tests, stdlib_empty_path_b008) {
+  auto dir = scratch();
+  auto lib = dir / "lib";
+  auto p = write(dir, "root.luca", "import \"\" in 1\n");
+  try {
+    parse_file_with(p, lib.generic_string());
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "B008");
+  }
+}
+
+TEST(module_tests, stdlib_shipped_module_parses) {
+  // pin the shipped built-in module: it must stay a parseable program evaluating to ()
+  auto p = std::filesystem::path{__FILE__}.parent_path() / ".." / "stdlib" / "std.luca";
+  if (!std::filesystem::is_regular_file(p)) GTEST_SKIP() << "src/stdlib/std.luca not found";
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(parse_file(p).first).v));
 }
 
 TEST(module_tests, c027_export_body_must_be_unit) {
   try {
-    parse("export let x = 1 in 5", "");
+    parse("export let x = 1 in 5", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C027");
@@ -385,7 +534,7 @@ TEST(module_tests, deepest_wins_imported_error) {
 TEST(module_tests, import_error_in_imported_file_without_path) {
   // the top-level file's own diagnostics carry no source attachment
   try {
-    parse("import \"nope.luca\" in 1", "");
+    parse("import \"nope.luca\" in 1", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "B008");

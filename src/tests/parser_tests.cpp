@@ -8,7 +8,7 @@ namespace {
 
 auto parse_ok(const std::string& src) {
   try {
-    return parse(src, "");
+    return parse(src, "", "");
   } catch (const parse_err& e) {
     EXPECT_TRUE(false) << "parse failed for: " << src << ": " << e.what();
     throw;
@@ -428,7 +428,7 @@ TEST(parser_tests, if_simple) {
   EXPECT_EQ(as<ast::li_int>(r.first).value, 1);
 }
 
-TEST(parser_tests, if_with_binop_cond) { EXPECT_THROW(parse("if 1 + 2 then 3 else 4", ""), parse_err); }
+TEST(parser_tests, if_with_binop_cond) { EXPECT_THROW(parse("if 1 + 2 then 3 else 4", "", ""), parse_err); }
 
 TEST(parser_tests, if_parenthesized_branches) {
   // branches fold first, then the constant if keeps the then-branch
@@ -514,9 +514,9 @@ TEST(parser_tests, fix_in_let) {
 
 TEST(parser_tests, strict_app_known_wrong) {
   // known non-arrow in function position must be rejected
-  EXPECT_THROW(parse("(\\f : int . f 5) 1", ""), parse_err);
+  EXPECT_THROW(parse("(\\f : int . f 5) 1", "", ""), parse_err);
   // known argument/parameter mismatch must be rejected
-  EXPECT_THROW(parse("(\\f : int -> int . f true) 1", ""), parse_err);
+  EXPECT_THROW(parse("(\\f : int -> int . f true) 1", "", ""), parse_err);
   // well-typed arrow application is accepted
   parse_ok("(\\f : int -> int . f 5) (\\x : int . x + 1)");
 }
@@ -736,7 +736,7 @@ TEST(parser_tests, shake_renumbers_indices) {
 }
 
 struct parser_error_theory : ::testing::TestWithParam<std::string> {};
-TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam(), ""), parse_err); }
+TEST_P(parser_error_theory, reject) { EXPECT_THROW(parse(GetParam(), "", ""), parse_err); }
 
 INSTANTIATE_TEST_SUITE_P(general, parser_error_theory,
                          ::testing::Values("", ")", "(1 + 2", "1 +", "int", "1 + true", "true = 1", "x",
@@ -762,7 +762,7 @@ struct parser_diag_theory : ::testing::TestWithParam<std::pair<std::string, std:
 TEST_P(parser_diag_theory, code) {
   const auto& [src, code] = GetParam();
   try {
-    parse(src, "");
+    parse(src, "", "");
     FAIL() << "expected a diagnostic for: " << src;
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, code);
@@ -809,7 +809,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(parser_tests, diag_position_multiline) {
   try {
-    parse("1 +\ntrue", "");
+    parse("1 +\ntrue", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C008");
@@ -824,7 +824,7 @@ TEST(parser_tests, diag_position_multiline) {
 
 TEST(parser_tests, diag_position_eof) {
   try {
-    parse("1 +", "");
+    parse("1 +", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "B006");
@@ -835,7 +835,7 @@ TEST(parser_tests, diag_position_eof) {
 TEST(parser_tests, diag_position_arg_mismatch) {
   // "true" is on line 2, columns 3-6; the caret underlines it
   try {
-    parse("let f : int -> int = \\x : int . x + 1 in\nf true", "");
+    parse("let f : int -> int = \\x : int . x + 1 in\nf true", "", "");
     FAIL() << "expected a diagnostic";
   } catch (const parse_err& e) {
     EXPECT_EQ(e.diag.code, "C003");

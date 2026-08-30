@@ -1,0 +1,11 @@
+// LUCA built-in library (v1)
+//
+// Naming convention: every name starts with "std-" and encodes the data types
+// it supports (no polymorphism, no overloading): std-abs-int, std-clamp-int.
+// Modules sit next to the luca executable; the importing file's directory is
+// searched first, then the built-in library.
+
+export let std-abs-int = \a:int. if a < 0 then 0 - a else a in
+export let std-clamp-int = \x:int. \lo:int. \hi:int.
+  if x < lo then lo else if x > hi then hi else x in
+()

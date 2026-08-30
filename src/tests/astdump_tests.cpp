@@ -10,7 +10,7 @@ namespace {
 
 auto parse_ok(const std::string& src) {
   try {
-    return parse(src, "");
+    return parse(src, "", "");
   } catch (const parse_err& e) {
     EXPECT_TRUE(false) << "parse failed for: " << src << ": " << e.what();
     throw;
