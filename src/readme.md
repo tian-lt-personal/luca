@@ -122,7 +122,7 @@ integer       ::= [0-9]+
 
 ### Modules (import / export)
 
-- `export let name (: T)? = E in body` is a `let` whose binding is the module's **contribution**: when the file is imported elsewhere, `name` becomes available, bound to `E`. The innermost body (conventionally `()`) is just the let grammar's filler — it is the module's standalone value and is ignored on import.
+- `export let name (: T)? = E in body` is a `let` whose binding is the module's **contribution**: when the file is imported elsewhere, `name` becomes available, bound to `E`. The innermost body must be the unit value `()` — it is the module's standalone value and is ignored on import (C027).
 - `import "path" in body` parses the file (relative to the importing file's directory), merges its **type declarations**, and makes its exported names available in `body`. The module's definitions are *connected* into the importing program's AST (one program-wide AST, linked by pointer), so `body` can use them like any local binding: `import "a.luca" in let test = Num 1 in inc-foo test` evaluates to `2` when `a.luca` exports `inc-foo` as in the example above.
 - Importing a module also brings its own imports' exported names into scope — required so the imported definitions can be evaluated. Types are merged **transitively** the same way; a type declared by the same module (reached through different import paths, e.g. a diamond) is merged once, while a type/constructor name that conflicts with a local declaration or another imported module is an error.
 - An exported definition may reference the module's imports and its **earlier** exports — but nothing bound in the enclosing term: `let y = 5 in export let x = y in ()` is rejected (C026), because `y` would not exist in the importing program. Exports nest into a chain (`export let a = ... in export let b = a + 1 in ...`), and `export` cannot wrap a structured binding.
@@ -193,3 +193,4 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C024 | constructor argument does not match its payload type |
 | C025 | binding a constructor name |
 | C026 | exported definition references a name bound outside the module scope (or `export` is nested in an exported definition / wraps a structured binding) |
+| C027 | the body of an exported definition must be `()` |

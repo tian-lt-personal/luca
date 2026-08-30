@@ -332,8 +332,17 @@ TEST(module_tests, c026_export_structured_binding) {
 
 TEST(module_tests, c026_negative_export_at_module_level_ok) {
   // exports chain normally: each is inside the previous one's body, not its def
-  auto r = parse("export let a = 1 in export let b = 2 in a + b", "");
-  EXPECT_EQ(std::get<int>(eval(r.first).v), 3);
+  auto r = parse("export let a = 1 in export let b = 2 in ()", "");
+  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(r.first).v));
+}
+
+TEST(module_tests, c027_export_body_must_be_unit) {
+  try {
+    parse("export let x = 1 in 5", "");
+    FAIL() << "expected a diagnostic";
+  } catch (const parse_err& e) {
+    EXPECT_EQ(e.diag.code, "C027");
+  }
 }
 
 // -- diagnostics from imported files ------------------------------------------

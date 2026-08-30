@@ -892,6 +892,13 @@ class parser {
     sema_.push_binding(name, ann);
     auto body = parse_expr(0);
     sema_.pop_binding();
+    // the innermost expression of an export chain is ignored on import; it must be ()
+    if (exported) {
+      if (auto bty = sema_.type_of(body.term); bty.has_value() && !std::holds_alternative<ast::type_unit>(*bty))
+        fail({body.loc, "C027",
+              "the body of an exported definition must be '()', got '" + type_name(*bty) + "'",
+              "the innermost expression of an export chain is ignored on import; end it with ()"});
+    }
 
     return {ast::term{ast::appl{
                 .func = make_term(actx_, ast::term{ast::abst{.param_type = std::move(ann),
