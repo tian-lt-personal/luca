@@ -951,12 +951,17 @@ class parser {
               "a module cannot import itself, directly or transitively"});
       }
 
-    std::ifstream ifs{resolved};
-    if (!ifs)
+    // stream exceptions: missing → open throws, directory/unreadable → read throws (B008)
+    std::ifstream ifs;
+    ifs.exceptions(std::ios::failbit | std::ios::badbit);
+    std::string content;
+    try {
+      ifs.open(resolved);
+      content.assign(std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{});
+    } catch (const std::ios_base::failure&) {
       fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
             "check that the file exists next to the importing file"});
-    std::string content{std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{}};
-    ifs.close();
+    }
 
     import_stack_.push_back(canonical);
     module_result imported;

@@ -54,12 +54,16 @@ int main(int argc, char** argv) {
     return app.exit(e);
   }
 
-  std::ifstream ifs{file};
-  if (!ifs) {
+  std::ifstream ifs;
+  ifs.exceptions(std::ios::failbit | std::ios::badbit);
+  std::string source;
+  try {
+    ifs.open(file);
+    source.assign(std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{});
+  } catch (const std::ios_base::failure&) {
     std::cerr << "error: cannot open file '" << file << "'\n";
     return 1;
   }
-  std::string source{std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{}};
 
   try {
     auto result = parse(source, file);
