@@ -123,13 +123,19 @@ integer       ::= [0-9]+
 ### Modules (import / export)
 
 - `export let name (: T)? = E in body` is a `let` whose binding is the module's **contribution**: when the file is imported elsewhere, `name` becomes available, bound to `E`. The innermost body must be the unit value `()` — it is the module's standalone value and is ignored on import (C027).
-- `import "path" in body` parses the file (relative to the importing file's directory), merges its **type declarations**, and makes its exported names available in `body`. The module's definitions are *connected* into the importing program's AST (one program-wide AST, linked by pointer), so `body` can use them like any local binding: `import "a.luca" in let test = Num 1 in inc-foo test` evaluates to `2` when `a.luca` exports `inc-foo` as in the example above.
+- `import "path" in body` parses the file, merges its **type declarations**, and makes its exported names available in `body`. The module's definitions are *connected* into the importing program's AST (one program-wide AST, linked by pointer), so `body` can use them like any local binding: `import "a.luca" in let test = Num 1 in inc-foo test` evaluates to `2` when `a.luca` exports `inc-foo` as in the example above. The path resolves first relative to the importing file's directory, then to the **built-in library** (see below).
 - Importing a module also brings its own imports' exported names into scope — required so the imported definitions can be evaluated. Types are merged **transitively** the same way; a type declared by the same module (reached through different import paths, e.g. a diamond) is merged once, while a type/constructor name that conflicts with a local declaration or another imported module is an error.
-- An exported definition may reference the module's imports and its **earlier** exports — but nothing bound in the enclosing term: `let y = 5 in export let x = y in ()` is rejected (C026), because `y` would not exist in the importing program. Exports nest into a chain (`export let a = ... in export let b = a + 1 in ...`), and `export` cannot wrap a structured binding.
+- An exported definition may reference the module's imports, its **earlier** exports, and its **private lets** — nothing bound outside the module chain (e.g. an enclosing lambda parameter): `\z:int. let y = z in export let x = y in ()` is rejected (C026), because `z` and `y` would not exist in the importing program. Exports nest into a chain (`export let a = ... in export let b = a + 1 in ...`), and `export` cannot wrap a structured binding.
+- A plain `let` in the export chain is **private**: the module's own exports may reference it, but it has no linkage — importers cannot see it (`import "m" in b` where `b` is private is an unbound-name error, C001). Example: `export let a = 1 in let b = 2 in export let c = b + 1 in ()` exports `a` and `c`; `b` stays internal. `let y = 5 in export let x = y in ()` exports only `x`.
 - A module cannot import itself, directly or transitively (C010/C026's sibling B010 reports the cycle).
 - `import` is an expression: `f import "a" in x` parses as `f` applied to the whole import term.
 - Type declarations still precede the term and cannot reference imported types; annotations and definitions in the term can.
 - The optimization pass runs **once, on the final program**: imported modules are parsed unoptimized (an export may be used only by an importer), and the whole connected AST is then tree-shaken/folded as one — unused imported bindings disappear (`import "a" in 5` collapses to `5`).
+
+### Built-in library
+
+- `std.luca` ships next to the `luca` executable (copied there by the build, installed into the same directory) and is the fallback location for imports: `import "std.luca" in ...` finds it even when the importing file's directory has no such file. A same-named file next to the importer always wins.
+- Naming convention: every name starts with `std-` and encodes the data types it supports — there is no polymorphism and no overloading, so `std-abs-int` and `std-clamp-int` are distinct from any hypothetical `std-abs-bool`. v1 exports: `std-abs-int : int -> int`, `std-clamp-int : int -> int -> int -> int` (`clamp x lo hi`).
 
 ### Compilation pipeline (two passes)
 
@@ -168,7 +174,7 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | B005 | expected a delimiter/punctuation (e.g. `)`, `:`, `.`, `=`, `in`, `with`) or a binding/constructor name |
 | B006 | unexpected end of input |
 | B007 | `fix` operand is not a lambda whose body is a lambda |
-| B008 | cannot open imported file |
+| B008 | cannot open imported file (searched next to the importing file and in the built-in library) |
 | B009 | malformed `type` declaration |
 | B010 | import cycle |
 | C001 | unbound identifier |
@@ -192,5 +198,5 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C023 | `match` arms have different result types |
 | C024 | constructor argument does not match its payload type |
 | C025 | binding a constructor name |
-| C026 | exported definition references a name bound outside the module scope (or `export` is nested in an exported definition / wraps a structured binding) |
+| C026 | exported definition references a name bound outside the module chain (a lambda parameter or other enclosing binder; or `export` is nested in an exported definition / wraps a structured binding) |
 | C027 | the body of an exported definition must be `()` |

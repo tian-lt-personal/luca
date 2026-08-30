@@ -19,6 +19,8 @@ cmake --preset vsdbg
 cmake --build --preset vsdbg
 ```
 
+The built-in library module `std.luca` is copied next to `luca.exe` by the build and installed alongside it; imports fall back to that location when a file is not found next to the importing file.
+
 ### Language at a glance
 
 A pure, statically typed functional language: lambda abstractions, `let` bindings, tuples, variant types with `match`, the fixed-point operator `fix`, and cross-file modules.

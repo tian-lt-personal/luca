@@ -1,7 +1,12 @@
 // std
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 // 3rd-party
 #include <CLI/CLI.hpp>
 #include <nlohmann/json.hpp>
@@ -13,6 +18,27 @@
 #include <parser.hpp>
 
 namespace {
+
+// directory containing the running luca executable ("" when unknown)
+std::string exe_dir(const char* argv0) {
+  std::error_code ec;
+  std::filesystem::path exe;
+#ifdef _WIN32
+  std::wstring buf(MAX_PATH, L'\0');
+  DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+  if (n == 0 || n >= buf.size()) return {};  // failure or truncated path
+  buf.resize(n);
+  exe = std::filesystem::path{std::move(buf)};
+#elif defined(__linux__)
+  exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+  if (ec && argv0) exe = std::filesystem::absolute(argv0, ec);
+#else
+  if (argv0) exe = std::filesystem::absolute(argv0, ec);
+#endif
+  if (ec || exe.empty()) return {};
+  exe.remove_filename();
+  return exe.empty() ? std::string{} : exe.lexically_normal().generic_string();
+}
 
 void print_value(const value& v) {
   std::visit(overloaded{
@@ -66,7 +92,7 @@ int main(int argc, char** argv) {
   }
 
   try {
-    auto result = parse(source, file);
+    auto result = parse(source, file, exe_dir(argc > 0 ? argv[0] : nullptr));
     if (dump_mode) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {

@@ -110,4 +110,6 @@ struct parse_err : std::runtime_error {
 };
 
 using parse_result = std::pair<ast::term, ast::context>;
-parse_result parse(const std::string& source, const std::string& path);
+// stdlib_dir: fallback search location for imports (the built-in library next to
+// the compiler executable); empty = import paths resolve only next to the importer
+parse_result parse(const std::string& source, const std::string& path, const std::string& stdlib_dir);

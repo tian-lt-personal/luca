@@ -59,8 +59,9 @@ struct parsed {
 };
 
 struct module_entry {
-  std::string name;  // copied: push_binding stores views into this module's source
-  ast::term* def;    // the desugared let's arg, in this module's arena
+  std::string name;   // copied: push_binding stores views into this module's source
+  ast::term* def;     // the desugared let's arg, in this module's arena
+  bool public_ = true;  // false: private (no linkage); lifted as an unresolvable binder
 };
 
 // a type declaration tagged with its declaring module, for provenance-based merge
@@ -375,9 +376,11 @@ ast::term* optimize_node(ast::term& t) noexcept {
 
 class parser {
  public:
-  explicit parser(const std::string& source, std::string path, std::vector<std::string>& import_stack)
+  explicit parser(const std::string& source, std::string path, std::vector<std::string>& import_stack,
+                  std::string stdlib_dir)
       : source_(source),
         self_path_(path.empty() ? std::string{} : canonical_path(path)),
+        stdlib_dir_(stdlib_dir.empty() ? std::string{} : canonical_path(stdlib_dir)),
         import_stack_(import_stack),
         lex_(source),
         actx_{std::make_unique<std::pmr::monotonic_buffer_resource>()},
@@ -435,7 +438,9 @@ class parser {
     types_.push_back(std::move(decl));
   }
   parsed parse_term() {
+    spine_ = true;  // the top-level term is the module chain
     auto t = parse_expr(0);
+    spine_ = false;
     if (auto ty = sema_.type_of(t.term); ty.has_value() && std::holds_alternative<ast::type_arrow>(*ty))
       fail({t.loc, "C009", "top-level expression must have a value type, got '" + type_name(*ty) + "'",
             "apply the function to an argument"});
@@ -456,7 +461,10 @@ class parser {
         continue;
       }
       if (is_start_of_expr(peek()) && prec_appl > precedence) {
+        bool saved = spine_;
+        spine_ = false;  // an application argument is not the module chain
         auto rhs = parse_expr(prec_appl);
+        spine_ = saved;
         if (auto fty = sema_.type_of(left.term); fty.has_value()) {
           auto* arrow = std::get_if<ast::type_arrow>(&*fty);
           if (!arrow)
@@ -495,7 +503,10 @@ class parser {
                           [this](tk::op_minus) -> parsed {
                             auto loc = curtok_->loc;
                             advance();
+                            bool saved = spine_;
+                            spine_ = false;
                             auto rhs = parse_expr(prec_unary_minus);
+                            spine_ = saved;
                             return {ast::term{ast::binop{.op = tk::op_minus{},
                                                          .left = make_term(actx_, ast::li_int{0}),
                                                          .right = make_term(actx_, std::move(rhs.term))}},
@@ -521,8 +532,8 @@ class parser {
                                 fail({loc, "C026",
                                       "exported definition references '" + std::string{id.name} +
                                           "', which is bound outside the module scope",
-                                      "an exported definition may only reference the module's imports and "
-                                      "earlier exports"});
+                                      "an exported definition may only reference the module's own bindings "
+                                      "(imports, exports, and private lets)"});
                             }
                             return {ast::term{ast::var{idx}}, loc};
                           },
@@ -544,7 +555,10 @@ class parser {
     auto* ty = make_type(actx_, ast::type{ast::type_ref{info.type_name}});
     if (std::holds_alternative<ast::type_unit>(info.payload_ty))
       return {ast::term{ast::ctor{.payload = nullptr, .tag = info.tag, .ty = ty, .name = std::string{id.name}}}, loc};
+    bool saved = spine_;
+    spine_ = false;
     auto arg = parse_expr(prec_appl);
+    spine_ = saved;
     // type_of cannot fail here: every failure mode is rejected earlier during parsing
     auto aty = *sema_.type_of(arg.term);
     if (!same_type(aty, info.payload_ty))
@@ -568,9 +582,12 @@ class parser {
       advance();
       return {ast::term{ast::li_unit{}}, {start.begin, close.end}};
     }
+    bool saved = spine_;
+    spine_ = false;  // parenthesized/tuple elements are not the module chain
     auto first = parse_expr(0);
     if (!(curtok_.has_value() && std::holds_alternative<tk::op_comma>(curtok_->t))) {
       expect<tk::rparen>("')'");
+      spine_ = saved;
       return first;
     }
     ast::tup tup;
@@ -580,6 +597,7 @@ class parser {
       auto el = parse_expr(0);
       tup.fields.push_back(make_term(actx_, std::move(el.term)));
     }
+    spine_ = saved;
     auto close = curtok_.has_value() ? curtok_->loc : src_range{0, 0};
     expect<tk::rparen>("')'");
     return {ast::term{std::move(tup)}, {start.begin, close.end}};
@@ -667,7 +685,10 @@ class parser {
 
     expect<tk::op_dot>("'.'");
     sema_.push_binding(name, param_type);
+    bool saved = spine_;
+    spine_ = false;  // a lambda body is not the module chain
     auto body = parse_expr(0);
+    spine_ = saved;
     sema_.pop_binding();
     return {ast::term{ast::abst{.param_type = std::move(param_type), .body = make_term(actx_, std::move(body.term))}},
             {start.begin, body.loc.end}};
@@ -675,6 +696,8 @@ class parser {
   parsed parse_if() {
     auto start = curtok_->loc;
     advance();
+    bool saved = spine_;
+    spine_ = false;  // if branches are not the module chain
     auto cond = parse_expr(0);
     if (auto ty = sema_.type_of(cond.term); ty.has_value() && !std::holds_alternative<ast::type_bool>(*ty))
       fail({cond.loc, "C004", "if condition must be 'bool', found '" + type_name(*ty) + "'", ""});
@@ -682,6 +705,7 @@ class parser {
     auto then_expr = parse_expr(0);
     expect<tk::kw_else>("'else'");
     auto else_expr = parse_expr(0);
+    spine_ = saved;
     if (auto then_ty = sema_.type_of(then_expr.term), else_ty = sema_.type_of(else_expr.term);
         then_ty.has_value() && else_ty.has_value() && !same_type(*then_ty, *else_ty))
       fail({else_expr.loc, "C005",
@@ -699,7 +723,10 @@ class parser {
   parsed parse_match() {
     auto start = curtok_->loc;
     advance();  // 'match'
+    bool saved = spine_;
+    spine_ = false;  // the scrutinee is not the module chain
     auto scrutinee = parse_expr(0);
+    spine_ = saved;
     expect<tk::kw_with>("'with'");
     auto sty = sema_.type_of(scrutinee.term);
     auto* ref = sty.has_value() ? std::get_if<ast::type_ref>(&*sty) : nullptr;
@@ -800,7 +827,10 @@ class parser {
         }
         sema_.push_binding(names[k], elem_tys[k]);
       }
+      bool arm_saved = spine_;
+      spine_ = false;  // an arm body is not the module chain
       auto body = parse_expr(0);
+      spine_ = arm_saved;
       for (size_t k = 0; k < names.size(); ++k) sema_.pop_binding();
       if (use_temp) sema_.pop_binding();
 
@@ -844,6 +874,7 @@ class parser {
     auto start = curtok_->loc;
     advance();
     check_curtok();
+    bool on_spine = spine_;  // the let is on the module chain only when the body is
     if (std::holds_alternative<tk::lbrace>(curtok_->t)) {
       if (exported)
         fail({curtok_->loc, "C026", "cannot export a structured binding",
@@ -872,7 +903,9 @@ class parser {
     }
 
     expect<tk::op_eq>("'='");
+    spine_ = false;  // the def is an expression, not the module chain
     auto bound_expr = parse_expr(0);
+    spine_ = on_spine;
     // type_of cannot fail here: every failure mode is rejected earlier during parsing
     auto ty = *sema_.type_of(bound_expr.term);
     if (annotated && !same_type(ann, ty))
@@ -884,8 +917,11 @@ class parser {
     if (exported) {
       // record the completed def; the body (next chain level) may hold nested exports
       exported->def = def_node;
+      exported->public_ = true;
       in_export_def_ = false;
       skeleton_.push_back(std::move(*exported));
+    } else if (on_spine) {
+      skeleton_.push_back(module_entry{std::string{name}, def_node, false});  // private, no linkage
     }
 
     expect<tk::kw_in>("'in'");
@@ -938,9 +974,28 @@ class parser {
     advance();
     expect<tk::kw_in>("'in'");
 
-    // relative to this file's directory (CWD when unknown)
+    // relative to this file's directory (CWD when unknown), then the built-in library
     auto base = self_path_.empty() ? std::filesystem::path{} : std::filesystem::path{self_path_}.parent_path();
-    auto resolved = base / std::filesystem::path{raw_path};
+    std::vector<std::filesystem::path> candidates{base / std::filesystem::path{raw_path}};
+    bool searched_stdlib = false;
+    if (!stdlib_dir_.empty() && !same_path(stdlib_dir_, base.generic_string())) {
+      candidates.push_back(std::filesystem::path{stdlib_dir_} / std::filesystem::path{raw_path});
+      searched_stdlib = true;
+    }
+
+    std::string hint = "check that the file exists next to the importing file";
+    if (searched_stdlib) hint += " or in the built-in library '" + stdlib_dir_ + "'";
+
+    // the first regular file wins; only the winner is cycle-checked and read
+    std::filesystem::path resolved;
+    std::error_code ec;
+    for (const auto& c : candidates)
+      if (std::filesystem::is_regular_file(c, ec)) {
+        resolved = c;
+        break;
+      }
+    if (resolved.empty())
+      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'", hint});
     auto canonical = canonical_path(resolved);
     for (const auto& in_progress : import_stack_)
       if (same_path(in_progress, canonical)) {
@@ -951,11 +1006,6 @@ class parser {
               "a module cannot import itself, directly or transitively"});
       }
 
-    // reject non-regular files up front (an empty import path resolves to the importing file's directory)
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(resolved, ec))
-      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
-            "check that the file exists next to the importing file"});
     // stream exceptions as the backstop for I/O errors during open/read
     std::ifstream ifs;
     ifs.exceptions(std::ios::failbit | std::ios::badbit);
@@ -964,14 +1014,13 @@ class parser {
       ifs.open(resolved);
       content.assign(std::istreambuf_iterator<char>{ifs}, std::istreambuf_iterator<char>{});
     } catch (const std::ios_base::failure&) {
-      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'",
-            "check that the file exists next to the importing file"});
+      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'", hint});
     }
 
     import_stack_.push_back(canonical);
     module_result imported;
     try {
-      imported = parser{content, resolved.generic_string(), import_stack_}.run_pass();
+      imported = parser{content, resolved.generic_string(), import_stack_, stdlib_dir_}.run_pass();
     } catch (parse_err& e) {
       import_stack_.pop_back();
       if (e.src.empty()) {  // deepest wins: attach the file the diagnostic refers to
@@ -1017,7 +1066,11 @@ class parser {
       auto ty = sema_.type_of(*entry.def);
       if (!ty.has_value()) throw std::logic_error{"imported definition cannot be typed"};
       slot_tys.push_back(std::move(*ty));
-      sema_.push_binding(entry.name, slot_tys.back());
+      // private entries keep their position but get a unique name no user id can match
+      if (entry.public_)
+        sema_.push_binding(entry.name, slot_tys.back());
+      else
+        sema_.push_binding("$priv:" + std::to_string(priv_seq_++), slot_tys.back());
     }
     // join the ambient chain before the body parses; imports in export defs stay local
     if (!in_export_def_)
@@ -1037,6 +1090,7 @@ class parser {
   // let b = $t.field(1) in body; $t cannot collide with user ids ('$' is not lexed)
   parsed parse_let_binding(src_range start) {
     advance();  // '{'
+    bool on_spine = spine_;  // the body continues the module chain when on it
     std::vector<std::pair<std::string, src_range>> names;
     for (;;) {
       check_curtok();
@@ -1063,7 +1117,9 @@ class parser {
       break;
     }
     expect<tk::op_eq>("'='");
+    spine_ = false;  // the bound expression is not the module chain
     auto bound_expr = parse_expr(0);
+    spine_ = on_spine;
     // type_of cannot fail here: every failure mode is rejected earlier during parsing
     auto bound_ty = *sema_.type_of(bound_expr.term);
     auto* prod = std::get_if<ast::type_prod>(&bound_ty);
@@ -1106,7 +1162,10 @@ class parser {
   parsed parse_fix() {
     auto start = curtok_->loc;
     advance();
+    bool saved = spine_;
+    spine_ = false;  // the fix operand is not the module chain
     auto operand = parse_expr(prec_appl);
+    spine_ = saved;
     auto* op_abst = std::get_if<ast::abst>(&operand.term);
     if (!op_abst || !std::get_if<ast::abst>(op_abst->body))
       fail({operand.loc, "B007", "fix expects a lambda whose body is a lambda",
@@ -1121,7 +1180,10 @@ class parser {
   }
   parsed parse_infix(parsed left, token op, src_range op_loc) {
     int prec = *infix_precedence(op);
+    bool saved = spine_;
+    spine_ = false;  // an operator operand is not the module chain
     auto right = parse_expr(prec);
+    spine_ = saved;
     if (auto lty = sema_.type_of(left.term), rty = sema_.type_of(right.term);
         lty.has_value() && rty.has_value() &&
         (!std::holds_alternative<ast::type_int>(*lty) || !std::holds_alternative<ast::type_int>(*rty))) {
@@ -1172,6 +1234,9 @@ class parser {
   size_t export_B_ = 0;                    // C026: binding count at the export def's start
   std::vector<module_entry> skeleton_;     // ambient binding chain, outermost first
   std::vector<module_type_decl> types_;    // transitive type declarations
+  std::string stdlib_dir_;                 // canonical built-in library directory ("" = none)
+  bool spine_ = false;                     // parsing the module chain (top term / chain bodies)
+  size_t priv_seq_ = 0;                    // unique names for lifted private binders
 
   lexer lex_;
   ast::context actx_;
@@ -1182,11 +1247,11 @@ class parser {
 
 }  // namespace
 
-parse_result parse(const std::string& source, const std::string& path) {
+parse_result parse(const std::string& source, const std::string& path, const std::string& stdlib_dir) {
   // seed the import stack with this file so a self-import is a detectable cycle
   std::vector<std::string> import_stack;
   if (!path.empty()) import_stack.push_back(canonical_path(path));
-  auto r = parser{source, path, import_stack}.run_pass();
+  auto r = parser{source, path, import_stack, stdlib_dir}.run_pass();
   // pass 2: the final program only — imported modules stay unoptimized, since
   // their exports may be referenced from other TUs
   auto* root = optimize_node(r.term);
