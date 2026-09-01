@@ -14,8 +14,9 @@ set(LUCA_STDLIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../stdlib")
 
 add_custom_command(TARGET lucacli POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-          "${LUCA_STDLIB_DIR}/std.luca" "$<TARGET_FILE_DIR:lucacli>/std.luca"
-  COMMENT "Copying std.luca next to the luca executable"
+          "${LUCA_STDLIB_DIR}/std.luca" "${LUCA_STDLIB_DIR}/std-ast.luca"
+          "$<TARGET_FILE_DIR:lucacli>"
+  COMMENT "Copying the built-in library next to the luca executable"
   VERBATIM)
 
-install(FILES "${LUCA_STDLIB_DIR}/std.luca" DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES "${LUCA_STDLIB_DIR}/std.luca" "${LUCA_STDLIB_DIR}/std-ast.luca" DESTINATION ${CMAKE_INSTALL_BINDIR})

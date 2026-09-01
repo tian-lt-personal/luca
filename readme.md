@@ -21,6 +21,16 @@ cmake --build --preset vsdbg
 
 The built-in library module `std.luca` is copied next to `luca.exe` by the build and installed alongside it; imports fall back to that location when a file is not found next to the importing file.
 
+### Dev Install (Windows)
+
+One-command install for daily use: builds the CLI (Release) with the vsdbg preset, installs `luca.exe` and the built-in library into `C:\Program Files\luca-cpp`, and adds its `bin` directory to the user PATH:
+
+```
+powershell -ExecutionPolicy Bypass -File src\dev-install.ps1
+```
+
+A UAC prompt appears once (Program Files is admin-protected); open a new terminal afterwards to pick up the PATH, then run `luca file.luca`. Re-running the script is safe — the build reuses the configured tree and PATH is updated only when the bin directory is missing. Options: `-Configuration Debug|Release` (default `Release`), `-Prefix <dir>` (default `C:\Program Files\luca-cpp`). Requires the same prerequisites as building, plus an elevated run for the install step.
+
 ### Language at a glance
 
 A pure, statically typed functional language: lambda abstractions, `let` bindings, tuples, variant types with `match`, the fixed-point operator `fix`, and cross-file modules.
