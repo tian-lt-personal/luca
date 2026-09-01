@@ -1,0 +1,38 @@
+// luca standard library - abstract syntax tree (AST) definitions
+
+type std-tok =
+    std-tok-id of string
+  | std-tok-kw-lambda | std-tok-kw-let | std-tok-kw-in | std-tok-kw-if | std-tok-kw-then | std-tok-kw-else
+  | std-tok-kw-true | std-tok-kw-false | std-tok-kw-bool | std-tok-kw-int | std-tok-kw-string | std-tok-kw-fix
+  | std-tok-kw-type | std-tok-kw-of | std-tok-kw-match | std-tok-kw-with | std-tok-kw-import | std-tok-kw-export
+  | std-tok-li-int of string
+  | std-tok-li-str of string
+  | std-tok-op-plus | std-tok-op-minus | std-tok-op-mul | std-tok-op-div | std-tok-op-eq | std-tok-op-ne
+  | std-tok-op-gt | std-tok-op-lt | std-tok-op-bar | std-tok-op-arrow | std-tok-op-comma | std-tok-op-colon
+  | std-tok-op-dot | std-tok-lparen | std-tok-rparen | std-tok-lbrace | std-tok-rbrace
+
+type std-type =
+    std-type-int
+  | std-type-bool
+  | std-type-unit
+  | std-type-string
+  | std-type-arrow of (std-type, std-type)       // type_arrow { from, to }
+  | std-type-ref of string                       // type_ref { name }
+
+type std-li-int = std-li-int-value of int
+type std-li-bool = std-li-bool-value of bool
+type std-var = std-var-index of int              // var { index } - de Bruijn
+
+type std-term =
+    std-var of std-var
+  | std-abst of (std-type, std-term)             // abst { param_type, body }
+  | std-appl of (std-term, std-term)             // appl { func, arg }
+  | std-binop of (std-tok, std-term, std-term)   // binop { op, left, right }
+  | std-ifexpr of (std-term, std-term, std-term) // ifexpr { cond, then, els }
+  | std-fix of std-term                          // fix { body }
+  | std-li-int of std-li-int
+  | std-li-bool of std-li-bool
+  | std-li-unit
+  | std-field of (std-term, int)                 // field { base, index }
+
+()
