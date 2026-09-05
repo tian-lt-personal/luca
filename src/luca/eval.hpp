@@ -3,7 +3,9 @@
 // std
 #include <memory>
 #include <memory_resource>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 // luca
@@ -37,17 +39,19 @@ enum class eval_strategy {
 };
 
 enum class eval_status {
-  success,
   unsupported,
   unsafe,
   runtime_failure,
 };
 
+struct eval_err : std::runtime_error {
+  eval_status status;
+  explicit eval_err(eval_status status, std::string message) : std::runtime_error{std::move(message)}, status{status} {}
+};
+
 struct eval_result {
-  eval_status status = eval_status::success;
-  std::variant<std::monostate, value, ast::term> result;
+  std::variant<value, ast::term> result;
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
-  std::string message;
 };
 
 eval_result evaluate(const ast::term& term, eval_strategy strategy);

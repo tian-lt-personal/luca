@@ -97,8 +97,6 @@ int main(int argc, char** argv) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {
       auto evaluated = evaluate(result.first, eval_strategy::runtime);
-      if (evaluated.status != eval_status::success)
-        throw std::logic_error{evaluated.message.empty() ? "runtime evaluation failed" : evaluated.message};
       print_value(std::get<value>(evaluated.result));
       std::cout << '\n';
     }
@@ -107,6 +105,9 @@ int main(int argc, char** argv) {
     std::cerr << render(e.diag, e.src.empty() ? std::string_view{source} : std::string_view{e.src},
                         e.src.empty() ? file : e.filename)
               << '\n';
+    return 1;
+  } catch (const eval_err& e) {
+    std::cerr << "error: " << e.what() << '\n';
     return 1;
   } catch (const std::logic_error& e) {
     std::cerr << "error: " << e.what() << '\n';

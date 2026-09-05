@@ -16,7 +16,6 @@ struct test_eval_result {
 auto eval_ok(const std::string& src) {
   auto r = parse(src, "", "");
   auto result = evaluate(r.first, eval_strategy::runtime);
-  EXPECT_EQ(result.status, eval_status::success);
   return test_eval_result{std::get<value>(std::move(result.result)), std::move(result.arena)};
 }
 
@@ -104,28 +103,37 @@ TEST(eval_tests, unary_minus_with_binop) { EXPECT_EQ(std::get<int>(eval_ok("-3 +
 TEST(eval_tests, compiletime_returns_ast_literal) {
   auto parsed = parse("1 + 2", "", "");
   auto result = evaluate(parsed.first, eval_strategy::compiletime);
-  ASSERT_EQ(result.status, eval_status::success);
   EXPECT_EQ(std::get<ast::li_int>(std::get<ast::term>(result.result)).value, 3);
 }
 
 TEST(eval_tests, compiletime_does_not_fall_back_to_runtime) {
   auto parsed = parse("let x : int = 1 in x + 2", "", "");
-  auto result = evaluate(parsed.first, eval_strategy::compiletime);
-  EXPECT_EQ(result.status, eval_status::unsupported);
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(result.result));
+  try {
+    evaluate(parsed.first, eval_strategy::compiletime);
+    FAIL() << "expected an evaluation error";
+  } catch (const eval_err& error) {
+    EXPECT_EQ(error.status, eval_status::unsupported);
+  }
 }
 
 TEST(eval_tests, try_compiletime_rejects_overflow) {
   auto parsed = parse("2147483647 + 1", "", "");
-  auto result = evaluate(parsed.first, eval_strategy::try_compiletime);
-  EXPECT_EQ(result.status, eval_status::unsafe);
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(result.result));
+  try {
+    evaluate(parsed.first, eval_strategy::try_compiletime);
+    FAIL() << "expected an evaluation error";
+  } catch (const eval_err& error) {
+    EXPECT_EQ(error.status, eval_status::unsafe);
+  }
 }
 
 TEST(eval_tests, runtime_reports_division_by_zero) {
   auto parsed = parse("let x : int = 0 in 1 / x", "", "");
-  auto result = evaluate(parsed.first, eval_strategy::runtime);
-  EXPECT_EQ(result.status, eval_status::runtime_failure);
+  try {
+    evaluate(parsed.first, eval_strategy::runtime);
+    FAIL() << "expected an evaluation error";
+  } catch (const eval_err& error) {
+    EXPECT_EQ(error.status, eval_status::runtime_failure);
+  }
 }
 
 // -- fix / recursion ----------------------------------------------------------

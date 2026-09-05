@@ -296,8 +296,11 @@ ast::term* optimize_node(ast::term& t) {
   if (auto* b = std::get_if<ast::binop>(&t)) {
     b->left = optimize_node(*b->left);
     b->right = optimize_node(*b->right);
-    auto result = evaluate(t, eval_strategy::try_compiletime);
-    if (result.status == eval_status::success) t = std::move(std::get<ast::term>(result.result));
+    try {
+      t = std::move(std::get<ast::term>(evaluate(t, eval_strategy::try_compiletime).result));
+    } catch (const eval_err&) {
+      return &t;
+    }
     return &t;
   }
   if (auto* ie = std::get_if<ast::ifexpr>(&t)) {
