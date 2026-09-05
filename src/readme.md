@@ -54,6 +54,12 @@ atomic        ::= id
                 | "false"
                 | "(" term ")"                         (* parenthesized expression *)
                 | tuple-lit
+                | quote
+                | splice
+
+quote         ::= "$" id                              (* reflect a let/export/import binding *)
+                | "$" "{" term "}"                    (* reflect an expression *)
+splice        ::= "[|" term "|]"                      (* insert a compile-time std-term value *)
 
 tuple-lit     ::= "(" ")"                              (* unit *)
                 | "(" term "," term { "," term } ")"   (* product literal *)
@@ -76,6 +82,8 @@ product-type  ::= "(" type "," type { "," type } ")"
 id            ::= [a-zA-Z_] [a-zA-Z0-9_-]*
 integer       ::= [0-9]+
 ```
+
+Punctuation also includes `$` (quote) and the two-character `[|` / `|]` (splice delimiters; `[|` and `|]` win over `|` by longest match). `$` inside string literals is a normal character.
 
 #### Operator Precedence
 
@@ -120,6 +128,18 @@ integer       ::= [0-9]+
 - Constructor names are globally unique and may not be shadowed by `let`/lambda/binding names.
 - A nested `match` inside a non-final arm body needs parens (the `|` separators would otherwise bind to the inner match).
 
+### Compile-time reflection
+
+LUCA can inspect and generate its own programs while compiling them. Reflection values are **compile-time only**: they are produced and consumed while the file is checked, and never exist at run time.
+
+- `$name` / `${expr}` — **quote**: captures a closed let/export/import binding's definition, or an expression, as a value of the type `std-term` (declared by `std-ast.luca`, which `import "std.luca"` brings in). Quoted code must be **closed** — it cannot reference bindings outside the reflection — and is parsed and checked like normal code before capture. Quoting a name bound to a quote yields the quoted term itself.
+- `[| expr |]` — **splice**: `expr` must evaluate at compile time to a `std-term` value; the reflected term is rendered back to source and re-parsed in place with every regular check (types, match exhaustiveness, ...). The splice is ordinary code, so `[| ast |] 1` applies the spliced program to `1`. Ill-formed or unrepresentable terms fail the compilation, with the diagnostic anchored at the splice.
+- `std-store-program : std-term -> string` and `std-load-program : string -> std-term` — **intrinsics** (compiler names, not stdlib exports) that serialize a reflected term to the JSON format of `luca -d` and load it back, so programs can be stored as text and restored. They can only be applied at compile time.
+
+Compile-time values flow through `let` bindings (`let ast = ${\x:int. x} in ...`), the two intrinsics, and splice operands. A binding is *statically evaluable* when its right-hand side is a quote, an intrinsic application over statically evaluable arguments, an alias of a static binding, or an `if` with a literal condition over static branches. Such a binding cannot be used at run time (C029), and a binding that mixes reflection into code the compiler cannot evaluate statically is rejected (C034). The sample `sample/reflection.luca` quotes, stores, loads and splices the identity function.
+
+v1 limitations: user functions and `match` cannot run over reflected values at compile time (values are data, not code). Tuples, constructors and `match` inside reflected code can still be quoted and spliced — except that `std-store-program` rejects comparison operators (`= != > <` serialize as `"op": null` and cannot be loaded back) and multi-name `match` payload patterns / structured bindings (field projections have no surface syntax) cannot be spliced (C033).
+
 ### Modules (import / export)
 
 - `export let name (: T)? = E in body` is a `let` whose binding is the module's **contribution**: when the file is imported elsewhere, `name` becomes available, bound to `E`. The innermost body must be the unit value `()` — it is the module's standalone value and is ignored on import (C027).
@@ -147,7 +167,7 @@ Parsing runs in two passes:
    - **Constant folding**: `1 + 2` → `3`, `8 / 2` → `4`, `1 = 2` → `false` (the result literal has the operator's result type, `int` vs `bool`). Division by zero is never folded.
    - **Dead-branch elimination**: `if true then A else B` → `A` (a literal condition).
 
-Pass 2 never changes behavior — the language is pure, so a dropped expression is unobservable — it only removes work. It runs once, on the final program: imported modules (see Modules) are parsed unoptimized, because an export may be used only by an importer. `lucacli -d` dumps the *optimized* tree. Match-arm payload closures and `fix` bodies keep their shapes (the machine applies arm bodies to the payload and expects `fix`'s body to be a lambda).
+Pass 2 never changes behavior — the language is pure, so a dropped expression is unobservable — it only removes work. It runs once, on the final program: imported modules (see Modules) are parsed unoptimized, because an export may be used only by an importer. `lucacli -d` dumps the *optimized* tree. Match-arm payload closures and `fix` bodies keep their shapes (the machine applies arm bodies to the payload and expects `fix`'s body to be a lambda). Quote nodes (see Compile-time reflection) are compile-time data: pass 2 treats them as opaque and never optimizes inside them; the statically evaluated bindings that feed splices have already been consumed during parsing and are removed by tree-shaking, so the optimized tree contains no reflection nodes.
 
 ### Diagnostics
 
@@ -200,3 +220,10 @@ Error codes: `A*` for lexing errors, `B*` for parsing errors, `C*` for sema (typ
 | C025 | binding a constructor name |
 | C026 | exported definition references a name bound outside the module chain (a lambda parameter or other enclosing binder; or `export` is nested in an exported definition / wraps a structured binding) |
 | C027 | the body of an exported definition must be `()` |
+| C028 | reflection requires the type `std-term` — import `"std.luca"` first |
+| C029 | a compile-time reflection value used at run time (quote/intrinsic in a runtime position, or a static binding referenced by runtime code) |
+| C030 | `$name` target is not a let/export/import binding |
+| C031 | reflected code is not closed (references bindings outside the reflection) |
+| C032 | splice operand is not a compile-time `std-term` value |
+| C033 | reflected term not representable: comparison operators cannot be stored, field projections cannot be spliced, stored JSON is malformed |
+| C034 | a binding mixes reflection into code that cannot be evaluated at compile time |

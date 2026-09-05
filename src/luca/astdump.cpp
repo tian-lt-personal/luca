@@ -19,6 +19,9 @@ void to_json(nlohmann::json& j, const ast::tup& t);
 void to_json(nlohmann::json& j, const ast::field& f);
 void to_json(nlohmann::json& j, const ast::ctor& c);
 void to_json(nlohmann::json& j, const ast::case_& cs);
+void to_json(nlohmann::json& j, const ast::quote& q);
+void to_json(nlohmann::json& j, const ast::store_program& s);
+void to_json(nlohmann::json& j, const ast::load_program& l);
 
 void to_json(nlohmann::json& j, const ast::type_unit&) { j["unit"] = nlohmann::json::object(); }
 void to_json(nlohmann::json& j, const ast::type_int&) { j["int"] = nlohmann::json::object(); }
@@ -117,6 +120,15 @@ void to_json(nlohmann::json& j, const ast::case_& cs) {
     to_json(aj["body"], *a.body);
     j["case"]["arms"].push_back(std::move(aj));
   }
+}
+// reflection nodes are compile-time only (parser removes them); dump defensively:
+// a quote is its captured term, intrinsics are their names
+void to_json(nlohmann::json& j, const ast::quote& q) { to_json(j, *q.data); }
+void to_json(nlohmann::json& j, const ast::store_program&) {
+  j["std-store-program"] = nlohmann::json::object();
+}
+void to_json(nlohmann::json& j, const ast::load_program&) {
+  j["std-load-program"] = nlohmann::json::object();
 }
 
 nlohmann::json dump(const ast::term& term) {

@@ -160,7 +160,11 @@ INSTANTIATE_TEST_SUITE_P(
         test_case{.source = ".", .expected = tk::op_dot{}}, test_case{.source = ",", .expected = tk::op_comma{}},
         test_case{.source = "|", .expected = tk::op_bar{}}, test_case{.source = "(", .expected = tk::lparen{}},
         test_case{.source = ")", .expected = tk::rparen{}}, test_case{.source = "{", .expected = tk::lbrace{}},
-        test_case{.source = "}", .expected = tk::rbrace{}}));
+        test_case{.source = "}", .expected = tk::rbrace{}},
+        // reflection markers: $ is punctuation now, [| and |] win over | by longest match
+        test_case{.source = "$", .expected = tk::dollar{}}, test_case{.source = "[|", .expected = tk::lsplice{}},
+        test_case{.source = "|]", .expected = tk::rsplice{}}));
+
 INSTANTIATE_TEST_SUITE_P(
     comment_tokens, lexer_theory,
     ::testing::Values(test_case{.source = "// this is a comment", .expected = std::unexpected{lex_err_eof{}}},

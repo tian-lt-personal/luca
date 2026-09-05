@@ -10,6 +10,11 @@
 
 bool same_type(const ast::type& a, const ast::type& b) noexcept;
 
+// type of a term checked against an explicit initial environment (the types of the
+// lambdas enclosing the term inside a reflected tree); the binder stack is ignored
+std::optional<ast::type> type_of_with_env(const ast::term& t, const std::vector<ast::type>& env,
+                                          ast::context& ctx) noexcept;
+
 struct sema_err : parse_err {
   explicit sema_err(diagnostic d) : parse_err{std::move(d)} {}
 };
@@ -25,6 +30,7 @@ class sema {
   explicit sema(ast::context& ctx) noexcept : ctx_{&ctx} {}
 
   int resolve_binding_index(src_range loc, std::string_view name) const;
+  bool has_binding(std::string_view name) const noexcept;  // no-throw scope query
   void push_binding(std::string_view name, ast::type ty);
   void pop_binding();
   size_t binding_count() const noexcept { return bindings_.size(); }

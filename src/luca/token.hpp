@@ -123,6 +123,15 @@ struct lbrace {
 struct rbrace {
   friend std::strong_ordering operator<=>(rbrace, rbrace) = default;
 };
+struct dollar {
+  friend std::strong_ordering operator<=>(dollar, dollar) = default;
+};
+struct lsplice {
+  friend std::strong_ordering operator<=>(lsplice, lsplice) = default;
+};
+struct rsplice {
+  friend std::strong_ordering operator<=>(rsplice, rsplice) = default;
+};
 
 }  // namespace tk
 
@@ -131,4 +140,4 @@ using token = std::variant<tk::id, tk::kw_lambda, tk::kw_let, tk::kw_in, tk::kw_
                            tk::kw_of, tk::kw_match, tk::kw_with, tk::kw_import, tk::kw_export, tk::li_int, tk::li_str,
                            tk::op_plus, tk::op_minus, tk::op_mul, tk::op_div, tk::op_eq, tk::op_ne, tk::op_gt,
                            tk::op_lt, tk::op_bar, tk::op_arrow, tk::op_comma, tk::op_colon, tk::op_dot, tk::lparen,
-                           tk::rparen, tk::lbrace, tk::rbrace>;
+                           tk::rparen, tk::lbrace, tk::rbrace, tk::dollar, tk::lsplice, tk::rsplice>;

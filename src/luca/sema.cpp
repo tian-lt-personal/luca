@@ -100,12 +100,30 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
             }
             return result;
           },
+          [](const ast::quote&) -> std::optional<ast::type> {
+            return ast::type{ast::type_ref{"std-term"}};  // nominal; must be declared at the quote site
+          },
+          [&ctx](const ast::store_program&) -> std::optional<ast::type> {
+            auto* from = make_type(ctx, ast::type{ast::type_ref{"std-term"}});
+            return ast::type{ast::type_arrow{.from = from, .to = make_type(ctx, ast::type{ast::type_string{}})}};
+          },
+          [&ctx](const ast::load_program&) -> std::optional<ast::type> {
+            auto* from = make_type(ctx, ast::type{ast::type_string{}});
+            return ast::type{ast::type_arrow{.from = from, .to = make_type(ctx, ast::type{ast::type_ref{"std-term"}})}};
+          },
           [](const auto&) -> std::optional<ast::type> { return std::nullopt; },
       },
       t);
 }
 
 }  // namespace
+
+std::optional<ast::type> type_of_with_env(const ast::term& t, const std::vector<ast::type>& env,
+                                          ast::context& ctx) noexcept {
+  std::vector<ast::type> param_types = env;  // seed with the enclosing lambdas' types
+  const std::vector<ast::type> no_bindings;  // the binder stack is not consulted
+  return type_of_impl(t, param_types, no_bindings, ctx);
+}
 
 bool same_type(const ast::type& a, const ast::type& b) noexcept {
   if (a.index() != b.index()) return false;
@@ -130,6 +148,12 @@ int sema::resolve_binding_index(src_range loc, std::string_view name) const {
   }
   throw sema_err{{loc, "C001", "unbound identifier '" + std::string{name} + "'",
                   "bind it with a lambda parameter or a let expression"}};
+}
+
+bool sema::has_binding(std::string_view name) const noexcept {
+  for (const auto& b : bindings_)
+    if (b == name) return true;
+  return false;
 }
 
 void sema::push_binding(std::string_view name, ast::type ty) {

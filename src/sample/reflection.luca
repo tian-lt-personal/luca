@@ -1,0 +1,10 @@
+import "std.luca" in
+let foo = \x:int. x in
+let ast1 = ${\x:int. x} in
+let ast2 = $foo in
+let r1 = [| ast1 |] 1 in // r1 -> 1
+let r2 = [| ast2 |] 2 in // r2 -> 2
+let prog-text = std-store-program ast1 in
+let prog = std-load-program prog-text in
+let r3 = [| prog |] 3 in // r3 -> 3
+()

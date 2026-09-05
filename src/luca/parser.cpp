@@ -6,7 +6,10 @@
 #include <iterator>
 #include <optional>
 #include <string>
+// 3rd-parties
+#include <nlohmann/json.hpp>
 // luca
+#include "astdump.hpp"
 #include "lexer.hpp"
 #include "mp.hpp"
 #include "parser.hpp"
@@ -21,7 +24,7 @@ constexpr bool holds_one_of(const token& tok) noexcept {
 
 constexpr bool is_start_of_expr(const token& tk) noexcept {
   return holds_one_of<tk::id, tk::li_int, tk::kw_lambda, tk::kw_if, tk::kw_match, tk::kw_true, tk::kw_false,
-                      tk::kw_import, tk::lparen>(tk);
+                      tk::kw_import, tk::lparen, tk::dollar, tk::lsplice>(tk);
 }
 
 constexpr int prec_unary_minus = 40;
@@ -162,6 +165,9 @@ std::string token_text(const token& t) {
                         [](const tk::rparen&) { return std::string{")"}; },
                         [](const tk::lbrace&) { return std::string{"{"}; },
                         [](const tk::rbrace&) { return std::string{"}"}; },
+                        [](const tk::dollar&) { return std::string{"$"}; },
+                        [](const tk::lsplice&) { return std::string{"[|"}; },
+                        [](const tk::rsplice&) { return std::string{"|]"}; },
                     },
                     t);
 }
@@ -232,7 +238,7 @@ bool uses_binder(const ast::term& t, int depth) noexcept {
               if (uses_binder(*arm.body, depth)) return true;
             return false;
           },
-          [](const auto&) { return false; },  // li_int / li_bool / li_unit
+          [](const auto&) { return false; },  // li_int / li_bool / li_unit / quote / intrinsics
       },
       t);
 }
@@ -371,7 +377,438 @@ ast::term* optimize_node(ast::term& t) noexcept {
     for (auto& arm : cs->arms) arm.body = optimize_node(*arm.body);
     return &t;
   }
-  return &t;  // var / li_int / li_bool / li_unit
+  return &t;  // var / li_int / li_bool / li_unit / quote / intrinsics (data is never optimized)
+}
+
+// -- compile-time reflection -------------------------------------------------
+//
+// $name / ${expr} quote a closed term into ast::quote data; [| expr |] splices a
+// statically known std-term value back into source and re-parses it inline (so
+// spliced code gets every regular check). std-store-program / std-load-program
+// serialize data through the astdump JSON format. Reflection values exist only
+// at compile time: they are read during parsing (before pass 2), never evaluated
+// by the machine, and binder-refs to them outside static positions are rejected.
+
+constexpr std::string_view k_std_term = "std-term";
+
+constexpr bool is_intrinsic_name(std::string_view name) noexcept {
+  return name == "std-store-program" || name == "std-load-program";
+}
+
+// a compile-time reflection value: a captured program or a stored program string
+using static_val = std::variant<ast::term*, std::string>;
+
+// parallel to sema's binder stack, one entry per binder
+struct binder_meta {
+  ast::term* def = nullptr;        // the let/export/import def ($name capture target)
+  std::optional<static_val> val;   // compile-time value when statically evaluable
+};
+
+// a term is closed when every var index refers to one of its own lambdas
+bool is_closed(const ast::term& t, size_t depth) noexcept {
+  return std::visit(overloaded{
+                        [&](const ast::var& v) { return v.index >= 0 && static_cast<size_t>(v.index) < depth; },
+                        [&](const ast::abst& a) { return is_closed(*a.body, depth + 1); },
+                        [&](const ast::appl& a) { return is_closed(*a.func, depth) && is_closed(*a.arg, depth); },
+                        [&](const ast::binop& b) { return is_closed(*b.left, depth) && is_closed(*b.right, depth); },
+                        [&](const ast::ifexpr& i) {
+                          return is_closed(*i.cond, depth) && is_closed(*i.then, depth) && is_closed(*i.els, depth);
+                        },
+                        [&](const ast::fix& f) { return is_closed(*f.body, depth); },
+                        [&](const ast::tup& tu) {
+                          for (const auto* el : tu.fields)
+                            if (!is_closed(*el, depth)) return false;
+                          return true;
+                        },
+                        [&](const ast::field& f) { return is_closed(*f.base, depth); },
+                        [&](const ast::ctor& c) { return !c.payload || is_closed(*c.payload, depth); },
+                        [&](const ast::case_& cs) {
+                          if (!is_closed(*cs.scrutinee, depth)) return false;
+                          for (const auto& arm : cs.arms)
+                            if (!is_closed(*arm.body, depth)) return false;
+                          return true;
+                        },
+                        [&](const ast::quote& q) { return is_closed(*q.data, depth); },
+                        [](const auto&) { return true; },
+                    },
+                    t);
+}
+
+// does the term reference the payload binder exactly outside it (depth counts the
+// term's own lambdas)? drives match-arm printing: `C x . e` vs `C . e`
+bool uses_payload(const ast::term& t, size_t depth) noexcept {
+  return std::visit(overloaded{
+                        [&](const ast::var& v) { return v.index >= 0 && static_cast<size_t>(v.index) == depth; },
+                        [&](const ast::abst& a) { return uses_payload(*a.body, depth + 1); },
+                        [&](const ast::appl& a) { return uses_payload(*a.func, depth) || uses_payload(*a.arg, depth); },
+                        [&](const ast::binop& b) { return uses_payload(*b.left, depth) || uses_payload(*b.right, depth); },
+                        [&](const ast::ifexpr& i) {
+                          return uses_payload(*i.cond, depth) || uses_payload(*i.then, depth) ||
+                                 uses_payload(*i.els, depth);
+                        },
+                        [&](const ast::fix& f) { return uses_payload(*f.body, depth); },
+                        [&](const ast::tup& tu) {
+                          for (const auto* el : tu.fields)
+                            if (uses_payload(*el, depth)) return true;
+                          return false;
+                        },
+                        [&](const ast::field& f) { return uses_payload(*f.base, depth); },
+                        [&](const ast::ctor& c) { return c.payload && uses_payload(*c.payload, depth); },
+                        [&](const ast::case_& cs) {
+                          if (uses_payload(*cs.scrutinee, depth)) return true;
+                          for (const auto& arm : cs.arms)
+                            if (uses_payload(*arm.body, depth)) return true;
+                          return false;
+                        },
+                        [](const auto&) { return false; },  // literals; quote data is closed
+                    },
+                    t);
+}
+
+// astdump serializes = != > < binops as "op": null, which cannot be loaded back
+bool has_compare_binop(const ast::term& t) noexcept {
+  return std::visit(overloaded{
+                        [&](const ast::binop& b) {
+                          if (std::holds_alternative<tk::op_eq>(b.op) || std::holds_alternative<tk::op_ne>(b.op) ||
+                              std::holds_alternative<tk::op_gt>(b.op) || std::holds_alternative<tk::op_lt>(b.op))
+                            return true;
+                          return has_compare_binop(*b.left) || has_compare_binop(*b.right);
+                        },
+                        [&](const ast::abst& a) { return has_compare_binop(*a.body); },
+                        [&](const ast::appl& a) { return has_compare_binop(*a.func) || has_compare_binop(*a.arg); },
+                        [&](const ast::ifexpr& i) {
+                          return has_compare_binop(*i.cond) || has_compare_binop(*i.then) || has_compare_binop(*i.els);
+                        },
+                        [&](const ast::fix& f) { return has_compare_binop(*f.body); },
+                        [&](const ast::tup& tu) {
+                          for (const auto* el : tu.fields)
+                            if (has_compare_binop(*el)) return true;
+                          return false;
+                        },
+                        [&](const ast::field& f) { return has_compare_binop(*f.base); },
+                        [&](const ast::ctor& c) { return c.payload && has_compare_binop(*c.payload); },
+                        [&](const ast::case_& cs) {
+                          if (has_compare_binop(*cs.scrutinee)) return true;
+                          for (const auto& arm : cs.arms)
+                            if (has_compare_binop(*arm.body)) return true;
+                          return false;
+                        },
+                        [&](const ast::quote& q) { return has_compare_binop(*q.data); },
+                        [](const auto&) { return false; },
+                    },
+                    t);
+}
+
+// a type rendered back to annotation source (parens where the grammar would
+// regroup a right-associative arrow differently)
+std::string type_text(const ast::type& t) {
+  return std::visit(overloaded{
+                        [](const ast::type_unit&) { return std::string{"()"}; },
+                        [](const ast::type_int&) { return std::string{"int"}; },
+                        [](const ast::type_bool&) { return std::string{"bool"}; },
+                        [](const ast::type_string&) { return std::string{"string"}; },
+                        [](const ast::type_ref& r) { return std::string{r.name}; },
+                        [](const ast::type_prod& p) {
+                          std::string s = "(";
+                          for (size_t i = 0; i < p.fields.size(); ++i) {
+                            if (i) s += ", ";
+                            s += type_text(*p.fields[i]);
+                          }
+                          return s + ")";
+                        },
+                        [](const ast::type_arrow& a) {
+                          std::string from = type_text(*a.from);
+                          if (std::holds_alternative<ast::type_arrow>(*a.from)) from = "(" + from + ")";
+                          return from + " -> " + type_text(*a.to);
+                        },
+                    },
+                    t);
+}
+
+// renders a reflected term back to source text for the splice reparse. Bindings
+// get fresh names (order keeps the de Bruijn positions); parens follow the parse
+// contexts so well-formed terms round-trip. Diagnostics are anchored at the splice.
+struct term_printer {
+  sema& sema_;
+  ast::context& actx_;
+  src_range loc_;
+  std::string out;
+  size_t fresh_ = 0;
+  std::vector<std::string> names_;  // enclosing binder names, innermost last
+  std::vector<ast::type> env_;      // their types (match scrutinee typing)
+
+  term_printer(sema& s, ast::context& actx, src_range loc) noexcept : sema_{s}, actx_{actx}, loc_{loc} {}
+
+  [[noreturn]] void fail_print(const std::string& msg) const {
+    throw parse_err{diagnostic{loc_, "C033", msg, ""}};
+  }
+
+  std::string fresh_name() {
+    for (;;) {
+      std::string n = "r" + std::to_string(fresh_++);
+      if (!sema_.lookup_ctor(n).has_value()) return n;  // binder names cannot collide (C025)
+    }
+  }
+
+  void emit(const ast::term& t) {
+    std::visit(overloaded{
+                   [&](const ast::var& v) {
+                     if (v.index < 0 || static_cast<size_t>(v.index) >= names_.size())
+                       fail_print("the reflected program contains an open variable reference");
+                     out += names_[names_.size() - 1 - static_cast<size_t>(v.index)];
+                   },
+                   [&](const ast::li_int& l) { out += std::to_string(l.value); },
+                   [&](const ast::li_bool& b) { out += b.value ? "true" : "false"; },
+                   [&](const ast::li_unit&) { out += "()"; },
+                   [&](const ast::abst& a) {
+                     std::string n = fresh_name();
+                     names_.push_back(n);
+                     env_.push_back(a.param_type);
+                     out += "\\" + n + ":" + type_text(a.param_type) + ". ";
+                     emit(*a.body);
+                     env_.pop_back();
+                     names_.pop_back();
+                   },
+                   [&](const ast::appl& a) { emit_appl(a); },
+                   [&](const ast::binop& b) {
+                     int prec = *infix_precedence(b.op);
+                     emit_binop_child(*b.left, prec, false);
+                     out += " " + token_text(b.op) + " ";
+                     emit_binop_child(*b.right, prec, true);
+                   },
+                   [&](const ast::ifexpr& i) {
+                     out += "if ";
+                     emit(*i.cond);
+                     out += " then ";
+                     emit(*i.then);
+                     out += " else ";
+                     emit(*i.els);
+                   },
+                   [&](const ast::fix& f) {
+                     out += "fix ";
+                     emit(*f.body);
+                   },
+                   [&](const ast::tup& tu) {
+                     out += "(";
+                     for (size_t i = 0; i < tu.fields.size(); ++i) {
+                       if (i) out += ", ";
+                       emit(*tu.fields[i]);
+                     }
+                     out += ")";
+                   },
+                   [&](const ast::field&) {
+                     fail_print("the reflected program contains a field projection (from a structured binding)");
+                   },
+                   [&](const ast::ctor& c) {
+                     out += c.name;
+                     if (c.payload) {
+                       out += " ";
+                       emit_arg(*c.payload);
+                     }
+                   },
+                   [&](const ast::case_& cs) { emit_case(cs); },
+                   [&](const ast::quote& q) { emit(*q.data); },  // nested captures splice as their data
+                   [&](const ast::store_program&) {
+                     fail_print("the reflected program contains a compile-time intrinsic");
+                   },
+                   [&](const ast::load_program&) {
+                     fail_print("the reflected program contains a compile-time intrinsic");
+                   },
+               },
+               t);
+  }
+
+  void emit_appl(const ast::appl& a) {
+    if (auto* inner = std::get_if<ast::appl>(a.func))
+      emit_appl(*inner);  // left spine stays bare: application is left-associative
+    else
+      emit_func(*a.func);
+    out += " ";
+    emit_arg(*a.arg);
+  }
+
+  // application function position: everything but a var must be parenthesized
+  // (a lambda/if/match would otherwise absorb the following argument)
+  void emit_func(const ast::term& t) {
+    if (std::holds_alternative<ast::var>(t))
+      emit(t);
+    else {
+      out += "(";
+      emit(t);
+      out += ")";
+    }
+  }
+
+  // argument / constructor-payload position: atoms parse bare, the rest needs
+  // parens so nothing is absorbed into the argument
+  void emit_arg(const ast::term& t) {
+    if (std::holds_alternative<ast::var>(t) || std::holds_alternative<ast::li_int>(t) ||
+        std::holds_alternative<ast::li_bool>(t) || std::holds_alternative<ast::li_unit>(t))
+      emit(t);
+    else {
+      out += "(";
+      emit(t);
+      out += ")";
+    }
+  }
+
+  // binop operand: a same-or-lower precedence binop on the right (or lower on the
+  // left) must be parenthesized; applications bind tighter and parse bare
+  void emit_binop_child(const ast::term& t, int parent_prec, bool right_side) {
+    if (auto* b = std::get_if<ast::binop>(&t)) {
+      int child_prec = *infix_precedence(b->op);
+      if (child_prec < parent_prec || (right_side && child_prec == parent_prec)) {
+        out += "(";
+        emit(t);
+        out += ")";
+        return;
+      }
+      emit(t);
+      return;
+    }
+    if (std::holds_alternative<ast::appl>(t) || std::holds_alternative<ast::var>(t) ||
+        std::holds_alternative<ast::li_int>(t) || std::holds_alternative<ast::li_bool>(t) ||
+        std::holds_alternative<ast::li_unit>(t)) {
+      emit(t);
+      return;
+    }
+    out += "(";  // if/fix/ctor/tup/abst: not int-typed or would swallow the operator
+    emit(t);
+    out += ")";
+  }
+
+  void emit_case(const ast::case_& cs) {
+    // constructor names are not stored per arm: recover them from the scrutinee type
+    auto sty = type_of_with_env(*cs.scrutinee, env_, actx_);
+    auto* ref = sty.has_value() ? std::get_if<ast::type_ref>(&*sty) : nullptr;
+    if (!ref) fail_print("cannot splice a match whose scrutinee type is not known here");
+    const auto* ctors = sema_.lookup_type(ref->name);
+    if (!ctors || ctors->size() != cs.arms.size())
+      fail_print("cannot splice a match whose arms do not match its scrutinee type");
+    out += "match ";
+    emit(*cs.scrutinee);
+    out += " with ";
+    for (size_t i = 0; i < cs.arms.size(); ++i) {
+      if (i) out += " | ";
+      out += (*ctors)[i].name;
+      const auto* closure = std::get_if<ast::abst>(cs.arms[i].body);
+      if (!closure) fail_print("cannot splice a match arm that is not a payload closure");
+      // a name is printed only when the body uses the payload: `C x . e` and
+      // `C . e` both reparse to the same payload closure
+      if (uses_payload(*closure->body, 0)) {
+        std::string n = fresh_name();
+        names_.push_back(n);
+        env_.push_back(closure->param_type);
+        out += " " + n;
+        out += " . ";
+        emit(*closure->body);
+        env_.pop_back();
+        names_.pop_back();
+      } else {
+        out += " . ";
+        emit(*closure->body);
+      }
+    }
+  }
+};
+
+[[noreturn]] void fail_json(src_range loc, const std::string& msg) {
+  throw parse_err{diagnostic{loc, "C033", "std-load-program: " + msg, ""}};
+}
+
+// rebuilds a term from the astdump JSON format; ctor.ty and case_ arm payload
+// types are not serialized and are recovered from the current type tables and
+// from the arm closures' parameter types
+ast::type load_type_json(const nlohmann::json& j, ast::context& actx, src_range loc) {
+  if (!j.is_object() || j.size() != 1) fail_json(loc, "expected a type object");
+  const auto& key = j.begin().key();
+  const auto& b = j.begin().value();
+  if (key == "unit") return ast::type{ast::type_unit{}};
+  if (key == "int") return ast::type{ast::type_int{}};
+  if (key == "bool") return ast::type{ast::type_bool{}};
+  if (key == "string") return ast::type{ast::type_string{}};
+  if (key == "ref") return ast::type{ast::type_ref{b.at("name").get<std::string>()}};
+  if (key == "arrow")
+    return ast::type{ast::type_arrow{.from = make_type(actx, load_type_json(b.at("from"), actx, loc)),
+                                     .to = make_type(actx, load_type_json(b.at("to"), actx, loc))}};
+  if (key == "prod") {
+    ast::type_prod prod;
+    for (const auto& f : b.at("fields"))
+      prod.fields.push_back(make_type(actx, load_type_json(f.at("type"), actx, loc)));
+    return ast::type{std::move(prod)};
+  }
+  fail_json(loc, "unknown type node '" + key + "'");
+}
+
+ast::term* load_program_json(const nlohmann::json& j, sema& sema_, ast::context& actx, src_range loc) {
+  if (!j.is_object() || j.size() != 1) fail_json(loc, "expected a term object");
+  const auto& key = j.begin().key();
+  const auto& b = j.begin().value();
+  if (key == "var") return make_term(actx, ast::term{ast::var{.index = b.at("index").get<int>()}});
+  if (key == "li_int") return make_term(actx, ast::term{ast::li_int{.value = b.at("value").get<int>()}});
+  if (key == "li_bool") return make_term(actx, ast::term{ast::li_bool{.value = b.at("value").get<bool>()}});
+  if (key == "li_unit") return make_term(actx, ast::term{ast::li_unit{}});
+  if (key == "abst")
+    return make_term(actx, ast::term{ast::abst{.param_type = load_type_json(b.at("param_type"), actx, loc),
+                                               .body = load_program_json(b.at("body"), sema_, actx, loc)}});
+  if (key == "appl")
+    return make_term(actx, ast::term{ast::appl{.func = load_program_json(b.at("func"), sema_, actx, loc),
+                                               .arg = load_program_json(b.at("arg"), sema_, actx, loc)}});
+  if (key == "binop") {
+    const auto& op = b.at("op");
+    // comparisons serialize as null and cannot be told apart: refuse
+    if (!op.is_string()) fail_json(loc, "a comparison operator cannot be stored (\"op\": null is ambiguous)");
+    std::string op_text = op.get<std::string>();
+    token op_tok;
+    if (op_text == "+") op_tok = tk::op_plus{};
+    else if (op_text == "-") op_tok = tk::op_minus{};
+    else if (op_text == "*") op_tok = tk::op_mul{};
+    else if (op_text == "/") op_tok = tk::op_div{};
+    else fail_json(loc, "unknown operator '" + op_text + "'");
+    return make_term(actx, ast::term{ast::binop{.op = std::move(op_tok),
+                                                .left = load_program_json(b.at("left"), sema_, actx, loc),
+                                                .right = load_program_json(b.at("right"), sema_, actx, loc)}});
+  }
+  if (key == "ifexpr")
+    return make_term(actx,
+                     ast::term{ast::ifexpr{.cond = load_program_json(b.at("cond"), sema_, actx, loc),
+                                           .then = load_program_json(b.at("then"), sema_, actx, loc),
+                                           .els = load_program_json(b.at("else"), sema_, actx, loc)}});
+  if (key == "fix")
+    return make_term(actx, ast::term{ast::fix{.body = load_program_json(b.at("body"), sema_, actx, loc)}});
+  if (key == "tup") {
+    ast::tup tup;
+    for (const auto& f : b.at("fields"))
+      tup.fields.push_back(load_program_json(f.at("value"), sema_, actx, loc));
+    return make_term(actx, ast::term{std::move(tup)});
+  }
+  if (key == "field")
+    return make_term(actx, ast::term{ast::field{.base = load_program_json(b.at("base"), sema_, actx, loc),
+                                                .index = b.at("index").get<size_t>()}});
+  if (key == "ctor") {
+    auto name = b.at("name").get<std::string>();
+    auto info = sema_.lookup_ctor(name);
+    if (!info.has_value())
+      fail_json(loc, "constructor '" + name + "' is not declared in this compilation");
+    if (b.at("tag").get<size_t>() != info->tag)
+      fail_json(loc, "constructor '" + name + "' has an inconsistent tag");
+    auto* ty = make_type(actx, ast::type{ast::type_ref{info->type_name}});
+    auto* payload = b.at("payload").is_null() ? nullptr : load_program_json(b.at("payload"), sema_, actx, loc);
+    return make_term(actx, ast::term{ast::ctor{.payload = payload, .tag = info->tag, .ty = ty, .name = std::move(name)}});
+  }
+  if (key == "case") {
+    ast::case_ cs;
+    cs.scrutinee = load_program_json(b.at("scrutinee"), sema_, actx, loc);
+    for (const auto& arm : b.at("arms")) {
+      auto* body = load_program_json(arm.at("body"), sema_, actx, loc);
+      // the arm's payload type is the closure's parameter type
+      const auto* abst = std::get_if<ast::abst>(body);
+      if (!abst) fail_json(loc, "a match arm body is not a payload closure");
+      cs.arms.push_back(ast::case_arm{.payload_ty = make_type(actx, abst->param_type), .body = body});
+    }
+    return make_term(actx, ast::term{std::move(cs)});
+  }
+  fail_json(loc, "unknown term node '" + key + "'");
 }
 
 class parser {
@@ -500,6 +937,8 @@ class parser {
                           [this](tk::kw_import) { return parse_import(); },
                           [this](tk::kw_export) { return parse_export(); },
                           [this](tk::lparen) { return parse_tuple_literal(); },
+                          [this](tk::dollar) { return parse_quote(); },
+                          [this](tk::lsplice) { return parse_splice(); },
                           [this](tk::op_minus) -> parsed {
                             auto loc = curtok_->loc;
                             advance();
@@ -524,7 +963,28 @@ class parser {
                           [this, loc](tk::id id) -> parsed {
                             if (auto info = sema_.lookup_ctor(id.name); info.has_value())
                               return parse_ctor(id, *info, loc);
+                            // compile-time intrinsics; a same-named binding wins (shadowing)
+                            if (!sema_.has_binding(id.name) && is_intrinsic_name(id.name)) {
+                              if (!sema_.is_declared_type(k_std_term))
+                                fail({loc, "C028",
+                                      "the intrinsic '" + std::string{id.name} +
+                                          "' requires the type 'std-term'; import \"std.luca\" first",
+                                      ""});
+                              if (static_ctx_ == 0 && !in_let_rhs_)
+                                fail({loc, "C029",
+                                      "the intrinsic '" + std::string{id.name} +
+                                          "' is compile-time only: apply it in a let binding or a splice operand",
+                                      ""});
+                              if (id.name == "std-store-program") return {ast::term{ast::store_program{}}, loc};
+                              return {ast::term{ast::load_program{}}, loc};
+                            }
                             auto idx = sema_.resolve_binding_index(loc, id.name);
+                            // a compile-time value cannot be computed at run time
+                            if (static_ctx_ == 0 && !in_let_rhs_ &&
+                                meta_[meta_.size() - 1 - static_cast<size_t>(idx)].val.has_value())
+                              fail({loc, "C029", "the compile-time value '" + std::string{id.name} +
+                                                      "' cannot be used at run time",
+                                    "consume it with a splice, std-store-program or std-load-program"});
                             // C026: a def may only reference the module's chain or its own binders
                             if (in_export_def_) {
                               size_t pos = sema_.binding_count() - 1 - static_cast<size_t>(idx);
@@ -684,12 +1144,12 @@ class parser {
     auto param_type = parse_type();
 
     expect<tk::op_dot>("'.'");
-    sema_.push_binding(name, param_type);
+    push_binding(name, param_type);
     bool saved = spine_;
     spine_ = false;  // a lambda body is not the module chain
     auto body = parse_expr(0);
     spine_ = saved;
-    sema_.pop_binding();
+    pop_binding();
     return {ast::term{ast::abst{.param_type = std::move(param_type), .body = make_term(actx_, std::move(body.term))}},
             {start.begin, body.loc.end}};
   }
@@ -819,20 +1279,20 @@ class parser {
       expect<tk::op_dot>("'.'");
 
       // push bindings, parse the body
-      if (use_temp) sema_.push_binding("$t", info->payload_ty);
+      if (use_temp) push_binding("$t", info->payload_ty);
       for (size_t k = 0; k < names.size(); ++k) {
         if (use_temp) {
           auto idx = sema_.resolve_binding_index(cname_loc, "$t");
           field_terms.push_back(ast::term{ast::field{.base = make_term(actx_, ast::term{ast::var{idx}}), .index = k}});
         }
-        sema_.push_binding(names[k], elem_tys[k]);
+        push_binding(names[k], elem_tys[k]);
       }
       bool arm_saved = spine_;
       spine_ = false;  // an arm body is not the module chain
       auto body = parse_expr(0);
       spine_ = arm_saved;
-      for (size_t k = 0; k < names.size(); ++k) sema_.pop_binding();
-      if (use_temp) sema_.pop_binding();
+      for (size_t k = 0; k < names.size(); ++k) pop_binding();
+      if (use_temp) pop_binding();
 
       // desugar: closure over the payload — (\$t : payload . ...) the machine applies
       ast::term inner = std::move(body.term);
@@ -904,7 +1364,10 @@ class parser {
 
     expect<tk::op_eq>("'='");
     spine_ = false;  // the def is an expression, not the module chain
+    bool saved_rhs = in_let_rhs_;
+    in_let_rhs_ = true;  // quotes and intrinsics are compile-time data allowed in a def
     auto bound_expr = parse_expr(0);
+    in_let_rhs_ = saved_rhs;
     spine_ = on_spine;
     // type_of cannot fail here: every failure mode is rejected earlier during parsing
     auto ty = *sema_.type_of(bound_expr.term);
@@ -914,6 +1377,12 @@ class parser {
             "the value must have the annotated type"});
     if (!annotated) ann = std::move(ty);
     auto* def_node = make_term(actx_, std::move(bound_expr.term));
+    // reflection: a statically evaluable def becomes a compile-time value
+    auto compile_val = eval_static(*def_node, bound_expr.loc);
+    if (!compile_val.has_value() && has_static_defect(*def_node, 0))
+      fail({bound_expr.loc, "C034",
+            "this binding mixes reflection with code that cannot be evaluated at compile time",
+            "make the binding statically evaluable: a quote, an intrinsic application, or an alias of one"});
     if (exported) {
       // record the completed def; the body (next chain level) may hold nested exports
       exported->def = def_node;
@@ -925,9 +1394,9 @@ class parser {
     }
 
     expect<tk::kw_in>("'in'");
-    sema_.push_binding(name, ann);
+    push_binding(name, ann, binder_meta{.def = def_node, .val = std::move(compile_val)});
     auto body = parse_expr(0);
-    sema_.pop_binding();
+    pop_binding();
     // the innermost expression of an export chain is ignored on import; it must be ()
     if (exported) {
       if (auto bty = sema_.type_of(body.term); bty.has_value() && !std::holds_alternative<ast::type_unit>(*bty))
@@ -1059,24 +1528,27 @@ class parser {
     types_.insert(types_.end(), std::make_move_iterator(imported.types.begin()),
                   std::make_move_iterator(imported.types.end()));
 
-    // lift: type each def before pushing its binder (defs may reference earlier ones)
+    // lift: type each def before pushing its binder (defs may reference earlier ones),
+    // recomputing compile-time values the same way the module's own parse did
     std::vector<ast::type> slot_tys;
     slot_tys.reserve(imported.skeleton.size());
     for (const auto& entry : imported.skeleton) {
       auto ty = sema_.type_of(*entry.def);
       if (!ty.has_value()) throw std::logic_error{"imported definition cannot be typed"};
       slot_tys.push_back(std::move(*ty));
+      auto compile_val = eval_static(*entry.def, path_loc);
       // private entries keep their position but get a unique name no user id can match
       if (entry.public_)
-        sema_.push_binding(entry.name, slot_tys.back());
+        push_binding(entry.name, slot_tys.back(), binder_meta{.def = entry.def, .val = std::move(compile_val)});
       else
-        sema_.push_binding("$priv:" + std::to_string(priv_seq_++), slot_tys.back());
+        push_binding("$priv:" + std::to_string(priv_seq_++), slot_tys.back(),
+                     binder_meta{.def = entry.def, .val = std::move(compile_val)});
     }
     // join the ambient chain before the body parses; imports in export defs stay local
     if (!in_export_def_)
       skeleton_.insert(skeleton_.end(), imported.skeleton.begin(), imported.skeleton.end());
     auto body = parse_expr(0);
-    for (size_t i = 0; i < imported.skeleton.size(); ++i) sema_.pop_binding();
+    for (size_t i = 0; i < imported.skeleton.size(); ++i) pop_binding();
 
     ast::term chain = std::move(body.term);
     for (size_t i = imported.skeleton.size(); i-- > 0;)
@@ -1118,7 +1590,10 @@ class parser {
     }
     expect<tk::op_eq>("'='");
     spine_ = false;  // the bound expression is not the module chain
+    bool saved_rhs = in_let_rhs_;
+    in_let_rhs_ = true;
     auto bound_expr = parse_expr(0);
+    in_let_rhs_ = saved_rhs;
     spine_ = on_spine;
     // type_of cannot fail here: every failure mode is rejected earlier during parsing
     auto bound_ty = *sema_.type_of(bound_expr.term);
@@ -1131,21 +1606,25 @@ class parser {
             "cannot bind " + std::to_string(names.size()) + " name(s) to a product of " +
                 std::to_string(prod->fields.size()) + " element(s)",
             "the number of names must match the product's elements"});
+    if (has_static_defect(bound_expr.term, 0))
+      fail({bound_expr.loc, "C034",
+            "this binding mixes reflection with code that cannot be evaluated at compile time",
+            "structured bindings cannot project compile-time values"});
 
     expect<tk::kw_in>("'in'");
     // bindings: [$t, a, b]; the k-th field access is the arg of the (k+1)-th lambda,
     // evaluated with k binders above $t, so its de Bruijn index is k
-    sema_.push_binding("$t", bound_ty);
+    push_binding("$t", bound_ty);
     std::vector<ast::term> field_terms;
     field_terms.reserve(names.size());
     for (size_t k = 0; k < names.size(); ++k) {
       auto idx = sema_.resolve_binding_index(bound_expr.loc, "$t");
       field_terms.push_back(ast::term{ast::field{.base = make_term(actx_, ast::term{ast::var{idx}}), .index = k}});
-      sema_.push_binding(names[k].first, *prod->fields[k]);
+      push_binding(names[k].first, *prod->fields[k]);
     }
     auto body = parse_expr(0);
-    for (size_t k = 0; k < names.size(); ++k) sema_.pop_binding();
-    sema_.pop_binding();
+    for (size_t k = 0; k < names.size(); ++k) pop_binding();
+    pop_binding();
 
     ast::term inner = std::move(body.term);
     for (size_t k = names.size(); k-- > 0;)
@@ -1225,6 +1704,215 @@ class parser {
     advance();
   }
 
+  // the sema binder stack and the parallel reflection metadata stay in lockstep
+  void push_binding(std::string_view name, ast::type ty, binder_meta meta = {}) {
+    sema_.push_binding(name, std::move(ty));
+    meta_.push_back(std::move(meta));
+  }
+  void pop_binding() {
+    sema_.pop_binding();
+    meta_.pop_back();
+  }
+
+  // compile-time evaluation: quote -> its data; var -> that binder's value;
+  // intrinsic application; if with a literal condition. No lambdas: reflection
+  // values are data, not functions. Throws (C033) on a defect inside store/load.
+  std::optional<static_val> eval_static(const ast::term& t, src_range loc) {
+    return std::visit(overloaded{
+                          [&](const ast::quote& q) -> std::optional<static_val> { return static_val{q.data}; },
+                          [&](const ast::var& v) -> std::optional<static_val> {
+                            if (v.index < 0 || static_cast<size_t>(v.index) >= meta_.size()) return std::nullopt;
+                            return meta_[meta_.size() - 1 - static_cast<size_t>(v.index)].val;
+                          },
+                          [&](const ast::appl& a) -> std::optional<static_val> {
+                            bool is_store = std::holds_alternative<ast::store_program>(*a.func);
+                            bool is_load = std::holds_alternative<ast::load_program>(*a.func);
+                            if (!is_store && !is_load) return std::nullopt;
+                            auto arg = eval_static(*a.arg, loc);
+                            if (!arg.has_value()) return std::nullopt;
+                            if (is_store) {
+                              auto* prog = std::get_if<ast::term*>(&*arg);
+                              if (!prog) return std::nullopt;
+                              return store_program(*prog, loc);
+                            }
+                            auto* text = std::get_if<std::string>(&*arg);
+                            if (!text) return std::nullopt;
+                            return load_program(*text, loc);
+                          },
+                          [&](const ast::ifexpr& ie) -> std::optional<static_val> {
+                            auto* c = std::get_if<ast::li_bool>(ie.cond);
+                            if (!c) return std::nullopt;
+                            return eval_static(c->value ? *ie.then : *ie.els, loc);
+                          },
+                          [](const auto&) -> std::optional<static_val> { return std::nullopt; },
+                      },
+                      t);
+  }
+
+  static_val store_program(ast::term* prog, src_range loc) {
+    if (has_compare_binop(*prog))
+      fail({loc, "C033",
+            "cannot store a program containing a comparison operator: it serializes as \"op\": null "
+            "and cannot be loaded back",
+            "keep = != > < out of reflected programs (v1)"});
+    // the luca -d format, pretty-printed the same way
+    return std::string{dump(*prog).dump(2)};
+  }
+
+  static_val load_program(const std::string& text, src_range loc) {
+    try {
+      return static_val{load_program_json(nlohmann::json::parse(text), sema_, actx_, loc)};
+    } catch (const nlohmann::json::exception& e) {
+      fail({loc, "C033", "std-load-program: the stored program is not valid AST JSON (" + std::string{e.what()} + ")",
+            ""});
+    }
+  }
+
+  // true when t contains a quote/intrinsic node or a variable bound to a compile-time
+  // value (depth counts t's own lambdas; such code could never run on the machine)
+  bool has_static_defect(const ast::term& t, size_t depth) const noexcept {
+    return std::visit(overloaded{
+                          [](const ast::quote&) { return true; },
+                          [](const ast::store_program&) { return true; },
+                          [](const ast::load_program&) { return true; },
+                          [&](const ast::var& v) {
+                            if (v.index < 0 || static_cast<size_t>(v.index) < depth) return false;
+                            size_t ambient = static_cast<size_t>(v.index) - depth;
+                            if (ambient >= meta_.size()) return false;
+                            return meta_[meta_.size() - 1 - ambient].val.has_value();
+                          },
+                          [&](const ast::abst& a) { return has_static_defect(*a.body, depth + 1); },
+                          [&](const ast::appl& a) {
+                            return has_static_defect(*a.func, depth) || has_static_defect(*a.arg, depth);
+                          },
+                          [&](const ast::binop& b) {
+                            return has_static_defect(*b.left, depth) || has_static_defect(*b.right, depth);
+                          },
+                          [&](const ast::ifexpr& i) {
+                            return has_static_defect(*i.cond, depth) || has_static_defect(*i.then, depth) ||
+                                   has_static_defect(*i.els, depth);
+                          },
+                          [&](const ast::fix& f) { return has_static_defect(*f.body, depth); },
+                          [&](const ast::tup& tu) {
+                            for (const auto* el : tu.fields)
+                              if (has_static_defect(*el, depth)) return true;
+                            return false;
+                          },
+                          [&](const ast::field& f) { return has_static_defect(*f.base, depth); },
+                          [&](const ast::ctor& c) { return c.payload && has_static_defect(*c.payload, depth); },
+                          [&](const ast::case_& cs) {
+                            if (has_static_defect(*cs.scrutinee, depth)) return true;
+                            for (const auto& arm : cs.arms)
+                              if (has_static_defect(*arm.body, depth)) return true;
+                            return false;
+                          },
+                          [](const auto&) { return false; },
+                      },
+                      t);
+  }
+
+  // $name / ${expr}: capture a closed term as compile-time data (type std-term)
+  parsed parse_quote() {
+    auto start = curtok_->loc;
+    advance();  // '$'
+    check_curtok();
+    if (!sema_.is_declared_type(k_std_term))
+      fail({start, "C028", "reflection requires the type 'std-term'; import \"std.luca\" first",
+            "write import \"std.luca\" in ..."});
+    if (static_ctx_ == 0 && !in_let_rhs_)
+      fail({start, "C029",
+            "a quote is a compile-time value: bind it with 'let' and consume it with a splice or an intrinsic",
+            "write let ast = $... in ..."});
+    ast::term* data = nullptr;
+    src_range end = start;
+    if (auto* id = std::get_if<tk::id>(&peek())) {
+      auto name = id->name;
+      auto name_loc = curtok_->loc;
+      advance();
+      if (sema_.lookup_ctor(name).has_value())
+        fail({name_loc, "C030", "cannot reflect '" + std::string{name} + "': it is a constructor, not a binding",
+              "reflect a let/export/import binding or write $ { expr }"});
+      auto idx = sema_.resolve_binding_index(name_loc, name);
+      const auto& m = meta_[meta_.size() - 1 - static_cast<size_t>(idx)];
+      if (!m.def)
+        fail({name_loc, "C030", "cannot reflect '" + std::string{name} + "': only let/export/import bindings can be reflected",
+              "reflect a name bound with 'let' (or exported by an import)"});
+      data = m.def;
+      if (auto* q = std::get_if<ast::quote>(m.def)) data = q->data;  // quote-of-a-quote: its captured term
+      end = name_loc;
+    } else if (std::holds_alternative<tk::lbrace>(curtok_->t)) {
+      advance();  // '{'
+      ++static_ctx_;  // the operand is data: nested quotes may occur inside it
+      bool saved_spine = spine_;
+      spine_ = false;  // lets inside the operand must not join the module chain
+      auto operand = parse_expr(0);
+      spine_ = saved_spine;
+      --static_ctx_;
+      end = operand.loc;
+      expect<tk::rbrace>("'}'");
+      data = make_term(actx_, std::move(operand.term));
+    } else {
+      fail({curtok_->loc, "B005", "expected an identifier or '{' after '$', found " + found_text(curtok_), ""});
+    }
+    if (!is_closed(*data, 0))
+      fail({end, "C031", "reflected code must be closed: it cannot reference bindings outside the reflection",
+            "only self-contained expressions and definitions can be reflected"});
+    return {ast::term{ast::quote{.data = data}}, {start.begin, end.end}};
+  }
+
+  // [| expr |]: statically evaluate the operand, render the program to source,
+  // and re-parse it inline so every regular check applies to the spliced code
+  parsed parse_splice() {
+    auto start = curtok_->loc;
+    advance();  // '[|'
+    ++static_ctx_;
+    auto operand = parse_expr(0);
+    --static_ctx_;
+    auto close = curtok_.has_value() ? curtok_->loc : src_range{0, 0};
+    expect<tk::rsplice>("'|]'");
+    auto val = eval_static(operand.term, operand.loc);
+    if (!val.has_value())
+      fail({operand.loc, "C032",
+            "the splice operand is not a compile-time program: expected a quote, a std-load-program result, "
+            "or a binding of one",
+            "reflect a program with $ or load one with std-load-program"});
+    auto* prog = std::get_if<ast::term*>(&*val);
+    if (!prog)
+      fail({operand.loc, "C032", "the splice operand is a compile-time string, not a program",
+            "splice a std-term value; a stored program text must first go through std-load-program"});
+    term_printer printer{sema_, actx_, start};
+    printer.emit(**prog);  // C033 on terms without a surface syntax
+    return parse_fragment(std::move(printer.out), start, close);
+  }
+
+  // re-parse generated source with the same parser instance (fresh lexer over the
+  // fragment); the fragment is a plain expression, never the module chain
+  parsed parse_fragment(std::string text, src_range splice_loc, src_range close) {
+    frag_src_ = std::move(text);  // binder name views into it live only during this parse
+    auto saved_lex = lex_;
+    auto saved_cur = curtok_;
+    auto saved_next = nextok_;
+    bool saved_spine = spine_;
+    spine_ = false;
+    lex_ = lexer{frag_src_};
+    curtok_ = lex_.next();
+    nextok_ = lex_.next();
+    parsed result;
+    try {
+      result = parse_expr(0);
+      if (curtok_.has_value())  // generated text is exactly one expression
+        fail({curtok_->loc, "B001", "unexpected '" + token_text(curtok_->t) + "' in spliced code", ""});
+    } catch (const parse_err& e) {
+      // anchor the diagnostic at the splice: the fragment text is generated
+      throw parse_err{diagnostic{splice_loc, e.diag.code, "in spliced code: " + e.diag.message, e.diag.hint}};
+    }
+    lex_ = saved_lex;
+    curtok_ = saved_cur;
+    nextok_ = saved_next;
+    spine_ = saved_spine;
+    return {std::move(result.term), {splice_loc.begin, close.end}};
+  }
+
  private:
   const std::string& source_;
   std::string self_path_;                  // canonical ("" = unknown)
@@ -1237,6 +1925,10 @@ class parser {
   std::string stdlib_dir_;                 // canonical built-in library directory ("" = none)
   bool spine_ = false;                     // parsing the module chain (top term / chain bodies)
   size_t priv_seq_ = 0;                    // unique names for lifted private binders
+  std::vector<binder_meta> meta_;          // reflection info, parallel to sema's binding stack
+  int static_ctx_ = 0;                     // parsing a splice operand or a quote block
+  bool in_let_rhs_ = false;                // parsing a let/export/import def expression
+  std::string frag_src_;                   // owns a splice fragment's text during its reparse
 
   lexer lex_;
   ast::context actx_;

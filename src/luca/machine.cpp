@@ -80,6 +80,9 @@ static value eval(const ast::term& t, const std::vector<value>& env, std::pmr::m
                           call_env.push_back(std::move(sv->payload));
                           return eval(*c->abst->body, call_env, arena);
                         },
+                        // reflection nodes are compile-time only; the parser removes or
+                        // rejects them, so reaching one here is a compiler bug
+                        [](const auto&) -> value { throw std::logic_error{"reflection node evaluated at run time"}; },
                     },
                     t);
 }

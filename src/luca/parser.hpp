@@ -87,7 +87,13 @@ struct case_ {
   ast::term* scrutinee;
   std::vector<case_arm> arms;
 };
-struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, li_unit, tup, field, ctor, case_> {};
+struct quote {
+  ast::term* data;  // compile-time reflection: the captured term (never runtime code)
+};
+struct store_program {};  // intrinsic: std-term -> string, compile-time only
+struct load_program {};   // intrinsic: string -> std-term, compile-time only
+struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, li_unit, tup, field, ctor, case_,
+                           quote, store_program, load_program> {};
 
 // the sema-owned definition of one constructor of a declared variant type
 struct sum_ctor {

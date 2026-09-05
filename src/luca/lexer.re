@@ -49,6 +49,9 @@ lex_result lexer::next() noexcept {
     ","        { return token_span{tk::op_comma{}, cur_span()}; }
     ":"        { return token_span{tk::op_colon{}, cur_span()}; }
     "."        { return token_span{tk::op_dot{}, cur_span()}; }
+    "$"        { return token_span{tk::dollar{}, cur_span()}; }
+    "[|"       { return token_span{tk::lsplice{}, cur_span()}; }
+    "|]"       { return token_span{tk::rsplice{}, cur_span()}; }
 
     "\\"        { return token_span{tk::kw_lambda{}, cur_span()}; }
     "lambda"    { return token_span{tk::kw_lambda{}, cur_span()}; }
