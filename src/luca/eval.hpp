@@ -3,7 +3,9 @@
 // std
 #include <memory>
 #include <memory_resource>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 // luca
@@ -20,11 +22,6 @@ using value = std::variant<std::monostate,  // unit
                            tuple_value*,    // product type
                            sum_value*>;     // variant type
 
-struct closure {
-  const ast::abst* abst;
-  std::vector<value> captured_env;
-};
-
 struct tuple_value {
   std::vector<value> fields;
 };
@@ -35,9 +32,26 @@ struct sum_value {
   value payload;
 };
 
+enum class eval_strategy {
+  runtime,
+  compiletime,
+  try_compiletime,
+};
+
+enum class eval_status {
+  unsupported,
+  unsafe,
+  runtime_failure,
+};
+
+struct eval_err : std::runtime_error {
+  eval_status status;
+  explicit eval_err(eval_status status, std::string message) : std::runtime_error{std::move(message)}, status{status} {}
+};
+
 struct eval_result {
-  value v;
+  std::variant<value, ast::term> result;
   std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
 };
 
-eval_result eval(const ast::term& t);
+eval_result evaluate(const ast::term& term, eval_strategy strategy);

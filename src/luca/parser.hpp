@@ -83,11 +83,12 @@ struct case_arm {
   const ast::type* payload_ty;
   ast::term* body;  // desugared closure over the payload: (\$t : payload . ...)
 };
-struct case_ {
+struct case_pack {
   ast::term* scrutinee;
   std::vector<case_arm> arms;
 };
-struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, li_unit, tup, field, ctor, case_> {};
+struct term : std::variant<var, abst, appl, binop, ifexpr, fix, li_int, li_bool, li_unit, tup, field, ctor, case_pack> {
+};
 
 // the sema-owned definition of one constructor of a declared variant type
 struct sum_ctor {

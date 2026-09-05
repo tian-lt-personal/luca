@@ -1,6 +1,17 @@
 cmake_minimum_required(VERSION 3.20)
 project(luca-cpp VERSION 0.1.0 LANGUAGES CXX)
 
+option(LUCA_ENABLE_CLANG_TIDY "Run clang-tidy during CMake builds" OFF)
+if (LUCA_ENABLE_CLANG_TIDY)
+  set(LUCA_CLANG_TIDY_EXECUTABLE "" CACHE FILEPATH "Path to the clang-tidy executable")
+  if (NOT LUCA_CLANG_TIDY_EXECUTABLE)
+    find_program(LUCA_CLANG_TIDY_EXECUTABLE NAMES clang-tidy REQUIRED)
+  elseif (NOT EXISTS "${LUCA_CLANG_TIDY_EXECUTABLE}")
+    message(FATAL_ERROR "LUCA_CLANG_TIDY_EXECUTABLE does not exist: ${LUCA_CLANG_TIDY_EXECUTABLE}")
+  endif()
+  set(CMAKE_CXX_CLANG_TIDY "${LUCA_CLANG_TIDY_EXECUTABLE}" CACHE STRING "clang-tidy executable used by CMake")
+endif()
+
 add_subdirectory(luca)
 add_subdirectory(cli)
 

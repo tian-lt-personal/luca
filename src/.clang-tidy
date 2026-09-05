@@ -1,0 +1,5 @@
+---
+Checks: '-*,bugprone-*,performance-*'
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*[\\/]src[\\/](luca|cli|tests)[\\/].*'
+FormatStyle: file

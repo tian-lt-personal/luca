@@ -18,7 +18,7 @@ void to_json(nlohmann::json& j, const ast::li_unit& u);
 void to_json(nlohmann::json& j, const ast::tup& t);
 void to_json(nlohmann::json& j, const ast::field& f);
 void to_json(nlohmann::json& j, const ast::ctor& c);
-void to_json(nlohmann::json& j, const ast::case_& cs);
+void to_json(nlohmann::json& j, const ast::case_pack& cs);
 
 void to_json(nlohmann::json& j, const ast::type_unit&) { j["unit"] = nlohmann::json::object(); }
 void to_json(nlohmann::json& j, const ast::type_int&) { j["int"] = nlohmann::json::object(); }
@@ -108,7 +108,7 @@ void to_json(nlohmann::json& j, const ast::ctor& c) {
   else
     j["ctor"]["payload"] = nullptr;
 }
-void to_json(nlohmann::json& j, const ast::case_& cs) {
+void to_json(nlohmann::json& j, const ast::case_pack& cs) {
   j["case"] = nlohmann::json::object();
   to_json(j["case"]["scrutinee"], *cs.scrutinee);
   j["case"]["arms"] = nlohmann::json::array();

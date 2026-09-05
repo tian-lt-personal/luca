@@ -13,7 +13,7 @@
 // luca
 #include <astdump.hpp>
 #include <diag.hpp>
-#include <machine.hpp>
+#include <eval.hpp>
 #include <mp.hpp>
 #include <parser.hpp>
 
@@ -96,8 +96,8 @@ int main(int argc, char** argv) {
     if (dump_mode) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {
-      auto evaluated = eval(result.first);
-      print_value(evaluated.v);
+      auto evaluated = evaluate(result.first, eval_strategy::runtime);
+      print_value(std::get<value>(evaluated.result));
       std::cout << '\n';
     }
   } catch (const parse_err& e) {
@@ -105,6 +105,9 @@ int main(int argc, char** argv) {
     std::cerr << render(e.diag, e.src.empty() ? std::string_view{source} : std::string_view{e.src},
                         e.src.empty() ? file : e.filename)
               << '\n';
+    return 1;
+  } catch (const eval_err& e) {
+    std::cerr << "error: " << e.what() << '\n';
     return 1;
   } catch (const std::logic_error& e) {
     std::cerr << "error: " << e.what() << '\n';

@@ -10,7 +10,7 @@
 // luca
 #include <astdump.hpp>
 #include <diag.hpp>
-#include <machine.hpp>
+#include <eval.hpp>
 #include <parser.hpp>
 
 namespace tests {
@@ -46,7 +46,20 @@ parse_result parse_file_with(const std::filesystem::path& p, const std::string& 
   return parse(read(p), p.generic_string(), stdlib_dir);
 }
 
-int eval_int(const std::filesystem::path& p) { return std::get<int>(eval(parse_file(p).first).v); }
+int eval_int(const std::filesystem::path& p) {
+  auto result = evaluate(parse_file(p).first, eval_strategy::runtime);
+  return std::get<int>(std::get<value>(result.result));
+}
+
+int eval_int(const ast::term& term) {
+  auto result = evaluate(term, eval_strategy::runtime);
+  return std::get<int>(std::get<value>(result.result));
+}
+
+bool eval_unit(const ast::term& term) {
+  auto result = evaluate(term, eval_strategy::runtime);
+  return std::holds_alternative<std::monostate>(std::get<value>(result.result));
+}
 
 }  // namespace
 
@@ -60,7 +73,7 @@ TEST(module_tests, spec_example_evaluates_to_2) {
   auto b = write(dir, "b.luca", "import \"a.luca\" in\nlet test = Num 1 in\ninc-foo test\n");
   EXPECT_EQ(eval_int(b), 2);
   // the module also evaluates standalone: its innermost body (()) is the value
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(parse_file(dir / "a.luca").first).v));
+  EXPECT_TRUE(eval_unit(parse_file(dir / "a.luca").first));
 }
 
 // -- lifting: how exported definitions may reference their module -------------
@@ -172,7 +185,7 @@ TEST(module_tests, adjacent_type_decls_no_separator) {
   // type declarations are self-delimiting: no `;` is needed between them or
   // before the term
   auto r = parse("type a = A type b = B let x = 1 in x", "", "");
-  EXPECT_EQ(std::get<int>(eval(r.first).v), 1);
+  EXPECT_EQ(eval_int(r.first), 1);
 }
 
 // -- pass 2 on the final program ----------------------------------------------
@@ -184,7 +197,7 @@ TEST(module_tests, pass2_shakes_unused_import_binder) {
   auto b = write(dir, "b.luca", "import \"a.luca\" in 5\n");
   auto r = parse_file(b);
   EXPECT_EQ(dump(r.first), nlohmann::json::parse(R"({"li_int":{"value":5}})"));
-  EXPECT_EQ(std::get<int>(eval(r.first).v), 5);
+  EXPECT_EQ(eval_int(r.first), 5);
 }
 
 TEST(module_tests, astdump_shows_lifted_chain) {
@@ -345,7 +358,7 @@ TEST(module_tests, c026_export_structured_binding) {
 TEST(module_tests, c026_negative_export_at_module_level_ok) {
   // exports chain normally: each is inside the previous one's body, not its def
   auto r = parse("export let a = 1 in export let b = 2 in ()", "", "");
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(r.first).v));
+  EXPECT_TRUE(eval_unit(r.first));
 }
 
 // -- private names in the export chain (no linkage) -----------------------------
@@ -363,7 +376,7 @@ TEST(module_tests, private_let_in_chain_user_example) {
     EXPECT_EQ(e.diag.code, "C001");
   }
   // the module also evaluates standalone: () is the value
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(parse_file(dir / "m.luca").first).v));
+  EXPECT_TRUE(eval_unit(parse_file(dir / "m.luca").first));
 }
 
 TEST(module_tests, private_let_positions_preserved) {
@@ -406,8 +419,7 @@ TEST(module_tests, lambda_internal_let_not_lifted) {
   auto r = parse("let a = 1 in (\\z:int. let y = 2 in z + y) a", "", "");
   auto j = dump(r.first);
   EXPECT_EQ(j["appl"]["arg"], nlohmann::json::parse(R"({"li_int":{"value":1}})"));
-  EXPECT_EQ(j["appl"]["func"]["abst"]["body"]["appl"]["arg"],
-            nlohmann::json::parse(R"({"var":{"index":0}})"));
+  EXPECT_EQ(j["appl"]["func"]["abst"]["body"]["appl"]["arg"], nlohmann::json::parse(R"({"var":{"index":0}})"));
 }
 
 // -- built-in library search (stdlib_dir) ---------------------------------------
@@ -417,7 +429,8 @@ TEST(module_tests, stdlib_fallback_resolves) {
   auto lib = dir / "lib";
   write(lib, "std.luca", "export let std-abs-int = \\a:int. if a < 0 then 0 - a else a in ()\n");
   auto p = write(dir, "root.luca", "import \"std.luca\" in std-abs-int (-5)\n");
-  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 5);
+  auto result = parse_file_with(p, lib.generic_string());
+  EXPECT_EQ(eval_int(result.first), 5);
 }
 
 TEST(module_tests, stdlib_importer_relative_wins) {
@@ -426,7 +439,8 @@ TEST(module_tests, stdlib_importer_relative_wins) {
   write(dir, "std.luca", "export let std-abs-int = \\a:int. a + 100 in ()\n");
   write(lib, "std.luca", "export let std-abs-int = \\a:int. if a < 0 then 0 - a else a in ()\n");
   auto p = write(dir, "root.luca", "import \"std.luca\" in std-abs-int 1\n");
-  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 101);
+  auto result = parse_file_with(p, lib.generic_string());
+  EXPECT_EQ(eval_int(result.first), 101);
 }
 
 TEST(module_tests, stdlib_module_imports_sibling) {
@@ -436,7 +450,8 @@ TEST(module_tests, stdlib_module_imports_sibling) {
   write(lib, "std.luca",
         "import \"std2.luca\" in export let std-quad-int = \\n:int. std-double-int (std-double-int n) in ()\n");
   auto p = write(dir, "root.luca", "import \"std.luca\" in std-quad-int 3\n");
-  EXPECT_EQ(std::get<int>(eval(parse_file_with(p, lib.generic_string()).first).v), 12);
+  auto result = parse_file_with(p, lib.generic_string());
+  EXPECT_EQ(eval_int(result.first), 12);
 }
 
 TEST(module_tests, stdlib_self_import_cycle_b010) {
@@ -482,7 +497,7 @@ TEST(module_tests, stdlib_shipped_module_parses) {
   // pin the shipped built-in module: it must stay a parseable program evaluating to ()
   auto p = std::filesystem::path{__FILE__}.parent_path() / ".." / "stdlib" / "std.luca";
   if (!std::filesystem::is_regular_file(p)) GTEST_SKIP() << "src/stdlib/std.luca not found";
-  EXPECT_TRUE(std::holds_alternative<std::monostate>(eval(parse_file(p).first).v));
+  EXPECT_TRUE(eval_unit(parse_file(p).first));
 }
 
 TEST(module_tests, c027_export_body_must_be_unit) {

@@ -17,10 +17,20 @@ jobs:
         include:
           - os: ubuntu-latest
             preset: ci-gcc
+            clang_tidy: false
+            cmake_args: ''
+          - os: ubuntu-latest
+            preset: ci-gcc
+            clang_tidy: true
+            cmake_args: '-DLUCA_ENABLE_CLANG_TIDY=ON'
           - os: ubuntu-latest
             preset: ci-clang
+            clang_tidy: false
+            cmake_args: ''
           - os: windows-latest
             preset: ci-msvc
+            clang_tidy: false
+            cmake_args: ''
 
     defaults:
       run:
@@ -37,6 +47,10 @@ jobs:
       if: runner.os == 'Windows'
       run: choco install -y re2c
 
+    - name: Install clang-tidy (Clang-Tidy)
+      if: matrix.clang_tidy
+      run: sudo apt-get install -y clang-tidy
+
     - name: Install libc++ (Clang)
       if: matrix.preset == 'ci-clang'
       run: |
@@ -52,7 +66,7 @@ jobs:
         vcpkgJsonGlob: 'src/vcpkg.json'
 
     - name: Configure
-      run: cmake --preset ${{ matrix.preset }}
+      run: cmake --preset ${{ matrix.preset }} ${{ matrix.cmake_args }}
 
     - name: Build
       run: cmake --build --preset ${{ matrix.preset }}
