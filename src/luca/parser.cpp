@@ -1,12 +1,12 @@
 // std
 #include <cassert>
-#include <climits>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
 #include <string>
 // luca
+#include "eval.hpp"
 #include "lexer.hpp"
 #include "mp.hpp"
 #include "parser.hpp"
@@ -59,8 +59,8 @@ struct parsed {
 };
 
 struct module_entry {
-  std::string name;   // copied: push_binding stores views into this module's source
-  ast::term* def;     // the desugared let's arg, in this module's arena
+  std::string name;     // copied: push_binding stores views into this module's source
+  ast::term* def;       // the desugared let's arg, in this module's arena
   bool public_ = true;  // false: private (no linkage); lifted as an unresolvable binder
 };
 
@@ -197,15 +197,14 @@ diagnostic lex_err_diag(const lex_err& e) {
 //   * tree-shaking: appl(abst(x, body), arg) where x is unused in body becomes
 //     body with free-variable de Bruijn indices decremented by 1 (this is what
 //     `let x = e in b` desugars to; the arg is dropped — the language is pure);
-//   * constant folding: binop of two int literals becomes the literal result
-//     (x / 0 is never folded: the machine's raw C++ division is UB at runtime,
-//     and the lazy `if` means a /0 in a dead branch is never evaluated);
+//   * constant folding: supported constant expressions become literal results;
+//     unsafe operations remain in the tree for runtime evaluation;
 //   * dead-branch elimination: if <bool literal> then A else B becomes A/B.
 //
 // A binder x (the fn of an appl) is used iff its body contains a var{k} at
 // nesting depth d (counting abst binders only) with k == d: x sits exactly one
 // binder above the body root. Match arm bodies are absts but never the fn of
-// an appl, so their payload closures are never dropped (the machine applies
+// an appl, so their payload closures are never dropped (the runtime evaluator applies
 // each arm body to the payload); the same holds for fix's abst.
 
 bool uses_binder(const ast::term& t, int depth) noexcept {
@@ -226,7 +225,7 @@ bool uses_binder(const ast::term& t, int depth) noexcept {
           },
           [&](const ast::field& f) { return uses_binder(*f.base, depth); },
           [&](const ast::ctor& c) { return c.payload && uses_binder(*c.payload, depth); },
-          [&](const ast::case_& cs) {
+          [&](const ast::case_pack& cs) {
             if (uses_binder(*cs.scrutinee, depth)) return true;
             for (const auto& arm : cs.arms)
               if (uses_binder(*arm.body, depth)) return true;
@@ -267,7 +266,7 @@ void shift_down(ast::term& t, int depth) noexcept {
                  [&](ast::ctor& c) {
                    if (c.payload) shift_down(*c.payload, depth);
                  },
-                 [&](ast::case_& cs) {
+                 [&](ast::case_pack& cs) {
                    shift_down(*cs.scrutinee, depth);
                    for (auto& arm : cs.arms) shift_down(*arm.body, depth);
                  },
@@ -276,54 +275,11 @@ void shift_down(ast::term& t, int depth) noexcept {
              t);
 }
 
-// Fold binop(op, li_int, li_int) in place, mirroring the machine's eval
-// (machine.cpp) exactly: int results for + - * /, bool results for = != > <.
-// Returns true when the node was replaced by a literal. Division by zero and
-// int overflow are never folded (UB at runtime; leave the node untouched).
-bool fold_literal_binop(ast::term& t) noexcept {
-  auto& b = std::get<ast::binop>(t);
-  auto* l = std::get_if<ast::li_int>(b.left);
-  auto* r = std::get_if<ast::li_int>(b.right);
-  if (!l || !r) return false;
-  const int lv = l->value;
-  const int rv = r->value;
-  std::optional<ast::term> folded =
-      std::visit(overloaded{
-                     [&](tk::op_plus) -> std::optional<ast::term> {
-                       const long long res = static_cast<long long>(lv) + rv;
-                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
-                       return ast::term{ast::li_int{static_cast<int>(res)}};
-                     },
-                     [&](tk::op_minus) -> std::optional<ast::term> {
-                       const long long res = static_cast<long long>(lv) - rv;
-                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
-                       return ast::term{ast::li_int{static_cast<int>(res)}};
-                     },
-                     [&](tk::op_mul) -> std::optional<ast::term> {
-                       const long long res = static_cast<long long>(lv) * rv;
-                       if (res < INT_MIN || res > INT_MAX) return std::nullopt;
-                       return ast::term{ast::li_int{static_cast<int>(res)}};
-                     },
-                     [&](tk::op_div) -> std::optional<ast::term> {
-                       if (rv == 0) return std::nullopt;
-                       return ast::term{ast::li_int{lv / rv}};
-                     },
-                     [&](tk::op_eq) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv == rv}}; },
-                     [&](tk::op_ne) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv != rv}}; },
-                     [&](tk::op_gt) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv > rv}}; },
-                     [&](tk::op_lt) -> std::optional<ast::term> { return ast::term{ast::li_bool{lv < rv}}; },
-                     [](auto) -> std::optional<ast::term> { return std::nullopt; },  // non-binop token
-                 },
-                 b.op);
-  if (folded.has_value()) t = std::move(*folded);
-  return folded.has_value();
-}
-
 // Bottom-up rewrite of t; returns the node that must replace t (t itself, or
 // a descendant of t). Children are rewritten before t is decided, so folds,
 // dead-branch eliminations, and newly exposed shakes cascade in one pass.
 // Never allocates; dropped nodes simply become garbage in the arena.
-ast::term* optimize_node(ast::term& t) noexcept {
+ast::term* optimize_node(ast::term& t) {
   if (auto* a = std::get_if<ast::abst>(&t)) {
     a->body = optimize_node(*a->body);
     return &t;
@@ -340,7 +296,8 @@ ast::term* optimize_node(ast::term& t) noexcept {
   if (auto* b = std::get_if<ast::binop>(&t)) {
     b->left = optimize_node(*b->left);
     b->right = optimize_node(*b->right);
-    fold_literal_binop(t);
+    auto result = evaluate(t, eval_strategy::try_compiletime);
+    if (result.status == eval_status::success) t = std::move(std::get<ast::term>(result.result));
     return &t;
   }
   if (auto* ie = std::get_if<ast::ifexpr>(&t)) {
@@ -366,7 +323,7 @@ ast::term* optimize_node(ast::term& t) noexcept {
     if (c->payload) c->payload = optimize_node(*c->payload);
     return &t;
   }
-  if (auto* cs = std::get_if<ast::case_>(&t)) {
+  if (auto* cs = std::get_if<ast::case_pack>(&t)) {
     cs->scrutinee = optimize_node(*cs->scrutinee);
     for (auto& arm : cs->arms) arm.body = optimize_node(*arm.body);
     return &t;
@@ -719,7 +676,7 @@ class parser {
   // match e with C1 x . e1 | C2 . e2 | C3 (a, b) . e3
   // The scrutinee must have a declared variant type; every constructor must appear
   // exactly once. Each arm's body is desugared into a closure over the runtime
-  // payload, which the machine applies to the constructor's payload.
+  // payload, which the runtime evaluator applies to the constructor's payload.
   parsed parse_match() {
     auto start = curtok_->loc;
     advance();  // 'match'
@@ -740,7 +697,7 @@ class parser {
       fail({scrutinee.loc, "C021", "match requires a variant value, found '" + type_name(*sty) + "'",
             "match over a value of a declared variant type"});
     std::vector<bool> used(ctors->size(), false);
-    // arms are stored by constructor tag (the machine dispatches arms[tag]);
+    // arms are stored by constructor tag (the runtime evaluator dispatches arms[tag]);
     // exhaustiveness guarantees every slot is filled regardless of source order
     std::vector<ast::case_arm> arms(ctors->size());
     std::optional<ast::type> result_ty;
@@ -834,7 +791,7 @@ class parser {
       for (size_t k = 0; k < names.size(); ++k) sema_.pop_binding();
       if (use_temp) sema_.pop_binding();
 
-      // desugar: closure over the payload — (\$t : payload . ...) the machine applies
+      // desugar: closure over the payload — (\$t : payload . ...) the runtime evaluator applies
       ast::term inner = std::move(body.term);
       if (use_temp)
         for (size_t k = names.size(); k-- > 0;)
@@ -866,8 +823,9 @@ class parser {
       if (!used[i])
         fail({start, "C022", "match does not handle constructor '" + std::string{(*ctors)[i].name} + "'",
               "handle every constructor of the type"});
-    return {ast::term{ast::case_{.scrutinee = make_term(actx_, std::move(scrutinee.term)), .arms = std::move(arms)}},
-            {start.begin, last_loc.end}};
+    return {
+        ast::term{ast::case_pack{.scrutinee = make_term(actx_, std::move(scrutinee.term)), .arms = std::move(arms)}},
+        {start.begin, last_loc.end}};
   }
   // exported != nullptr: report the binding back for the module skeleton
   parsed parse_let(module_entry* exported) {
@@ -877,8 +835,8 @@ class parser {
     bool on_spine = spine_;  // the let is on the module chain only when the body is
     if (std::holds_alternative<tk::lbrace>(curtok_->t)) {
       if (exported)
-        fail({curtok_->loc, "C026", "cannot export a structured binding",
-              "export each name with its own 'export let'"});
+        fail(
+            {curtok_->loc, "C026", "cannot export a structured binding", "export each name with its own 'export let'"});
       return parse_let_binding(start);
     }
 
@@ -931,8 +889,7 @@ class parser {
     // the innermost expression of an export chain is ignored on import; it must be ()
     if (exported) {
       if (auto bty = sema_.type_of(body.term); bty.has_value() && !std::holds_alternative<ast::type_unit>(*bty))
-        fail({body.loc, "C027",
-              "the body of an exported definition must be '()', got '" + type_name(*bty) + "'",
+        fail({body.loc, "C027", "the body of an exported definition must be '()', got '" + type_name(*bty) + "'",
               "the innermost expression of an export chain is ignored on import; end it with ()"});
     }
 
@@ -994,8 +951,7 @@ class parser {
         resolved = c;
         break;
       }
-    if (resolved.empty())
-      fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'", hint});
+    if (resolved.empty()) fail({path_loc, "B008", "cannot open imported file '" + raw_path + "'", hint});
     auto canonical = canonical_path(resolved);
     for (const auto& in_progress : import_stack_)
       if (same_path(in_progress, canonical)) {
@@ -1073,23 +1029,22 @@ class parser {
         sema_.push_binding("$priv:" + std::to_string(priv_seq_++), slot_tys.back());
     }
     // join the ambient chain before the body parses; imports in export defs stay local
-    if (!in_export_def_)
-      skeleton_.insert(skeleton_.end(), imported.skeleton.begin(), imported.skeleton.end());
+    if (!in_export_def_) skeleton_.insert(skeleton_.end(), imported.skeleton.begin(), imported.skeleton.end());
     auto body = parse_expr(0);
     for (size_t i = 0; i < imported.skeleton.size(); ++i) sema_.pop_binding();
 
     ast::term chain = std::move(body.term);
     for (size_t i = imported.skeleton.size(); i-- > 0;)
       chain = ast::term{ast::appl{
-          .func = make_term(actx_, ast::term{ast::abst{.param_type = slot_tys[i],
-                                                       .body = make_term(actx_, std::move(chain))}}),
+          .func = make_term(
+              actx_, ast::term{ast::abst{.param_type = slot_tys[i], .body = make_term(actx_, std::move(chain))}}),
           .arg = imported.skeleton[i].def}};
     return {std::move(chain), {start.begin, body.loc.end}};
   }
   // let {a, b} = E in body  desugars to  let $t = E in let a = $t.field(0) in
   // let b = $t.field(1) in body; $t cannot collide with user ids ('$' is not lexed)
   parsed parse_let_binding(src_range start) {
-    advance();  // '{'
+    advance();               // '{'
     bool on_spine = spine_;  // the body continues the module chain when on it
     std::vector<std::pair<std::string, src_range>> names;
     for (;;) {
@@ -1227,16 +1182,16 @@ class parser {
 
  private:
   const std::string& source_;
-  std::string self_path_;                  // canonical ("" = unknown)
+  std::string self_path_;                   // canonical ("" = unknown)
   std::vector<std::string>& import_stack_;  // canonical paths in progress (cycle detection)
   bool in_export_def_ = false;
-  size_t export_m_ = 0;                    // C026: skeleton size at the export def's start
-  size_t export_B_ = 0;                    // C026: binding count at the export def's start
-  std::vector<module_entry> skeleton_;     // ambient binding chain, outermost first
-  std::vector<module_type_decl> types_;    // transitive type declarations
-  std::string stdlib_dir_;                 // canonical built-in library directory ("" = none)
-  bool spine_ = false;                     // parsing the module chain (top term / chain bodies)
-  size_t priv_seq_ = 0;                    // unique names for lifted private binders
+  size_t export_m_ = 0;                  // C026: skeleton size at the export def's start
+  size_t export_B_ = 0;                  // C026: binding count at the export def's start
+  std::vector<module_entry> skeleton_;   // ambient binding chain, outermost first
+  std::vector<module_type_decl> types_;  // transitive type declarations
+  std::string stdlib_dir_;               // canonical built-in library directory ("" = none)
+  bool spine_ = false;                   // parsing the module chain (top term / chain bodies)
+  size_t priv_seq_ = 0;                  // unique names for lifted private binders
 
   lexer lex_;
   ast::context actx_;

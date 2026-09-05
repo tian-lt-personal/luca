@@ -84,7 +84,7 @@ std::optional<ast::type> type_of_impl(const ast::term& t, std::vector<ast::type>
             return std::optional<ast::type>{*prod->fields[f.index]};
           },
           [&](const ast::ctor& c) -> std::optional<ast::type> { return std::optional<ast::type>{*c.ty}; },
-          [&](const ast::case_& cs) -> std::optional<ast::type> {
+          [&](const ast::case_pack& cs) -> std::optional<ast::type> {
             auto sty = type_of_impl(*cs.scrutinee, param_types, binding_types, ctx);
             if (!sty.has_value() || !std::holds_alternative<ast::type_ref>(*sty)) return std::nullopt;
             std::optional<ast::type> result;

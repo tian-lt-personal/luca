@@ -13,7 +13,7 @@
 // luca
 #include <astdump.hpp>
 #include <diag.hpp>
-#include <machine.hpp>
+#include <eval.hpp>
 #include <mp.hpp>
 #include <parser.hpp>
 
@@ -96,8 +96,10 @@ int main(int argc, char** argv) {
     if (dump_mode) {
       std::cout << dump(result.first).dump(2) << '\n';
     } else {
-      auto evaluated = eval(result.first);
-      print_value(evaluated.v);
+      auto evaluated = evaluate(result.first, eval_strategy::runtime);
+      if (evaluated.status != eval_status::success)
+        throw std::logic_error{evaluated.message.empty() ? "runtime evaluation failed" : evaluated.message};
+      print_value(std::get<value>(evaluated.result));
       std::cout << '\n';
     }
   } catch (const parse_err& e) {

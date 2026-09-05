@@ -20,11 +20,6 @@ using value = std::variant<std::monostate,  // unit
                            tuple_value*,    // product type
                            sum_value*>;     // variant type
 
-struct closure {
-  const ast::abst* abst;
-  std::vector<value> captured_env;
-};
-
 struct tuple_value {
   std::vector<value> fields;
 };
@@ -35,9 +30,24 @@ struct sum_value {
   value payload;
 };
 
-struct eval_result {
-  value v;
-  std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
+enum class eval_strategy {
+  runtime,
+  compiletime,
+  try_compiletime,
 };
 
-eval_result eval(const ast::term& t);
+enum class eval_status {
+  success,
+  unsupported,
+  unsafe,
+  runtime_failure,
+};
+
+struct eval_result {
+  eval_status status = eval_status::success;
+  std::variant<std::monostate, value, ast::term> result;
+  std::unique_ptr<std::pmr::monotonic_buffer_resource> arena;
+  std::string message;
+};
+
+eval_result evaluate(const ast::term& term, eval_strategy strategy);

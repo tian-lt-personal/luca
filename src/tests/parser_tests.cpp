@@ -702,7 +702,7 @@ TEST(parser_tests, match_node_shape) {
       "type shape = Circle of int | Square\n"
       "let pick = \\s : shape . match s with Circle r . r | Square . 0 in pick (Circle 5)");
   const auto& a = as<ast::appl>(r.first);
-  const auto& body = as<ast::case_>(*as<ast::abst>(*a.arg).body);
+  const auto& body = as<ast::case_pack>(*as<ast::abst>(*a.arg).body);
   EXPECT_TRUE(is<ast::var>(*body.scrutinee));
   ASSERT_EQ(body.arms.size(), 2u);
   // each arm body is a closure over the payload
