@@ -4,6 +4,7 @@ add_executable(luca_tests
   lexer_tests.cpp
   parser_tests.cpp
   astdump_tests.cpp
+  coro_tests.cpp
   eval_tests.cpp
   diag_tests.cpp
   module_tests.cpp

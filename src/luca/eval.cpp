@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 // luca
+#include "coro.hpp"
 #include "eval.hpp"
 #include "mp.hpp"
 
@@ -60,119 +61,209 @@ primitive apply_binop(const token& op, int left, int right) {
       op);
 }
 
-value runtime_eval(const ast::term& term, const std::vector<value>& env, std::pmr::monotonic_buffer_resource& arena);
+lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
+                         std::pmr::monotonic_buffer_resource& arena);
 
-value runtime_binop(const ast::binop& binop, const std::vector<value>& env,
-                    std::pmr::monotonic_buffer_resource& arena) {
-  auto left = runtime_eval(*binop.left, env, arena);
-  auto right = runtime_eval(*binop.right, env, arena);
-  return std::visit([](auto result) -> value { return result; },
-                    apply_binop(binop.op, std::get<int>(left), std::get<int>(right)));
+lazy<value> runtime_binop(const ast::binop& binop, const std::vector<value>& env,
+                          std::pmr::monotonic_buffer_resource& arena) {
+  auto left = co_await runtime_eval(*binop.left, env, arena);
+  auto right = co_await runtime_eval(*binop.right, env, arena);
+  co_return std::visit([](auto result) -> value { return result; },
+                       apply_binop(binop.op, std::get<int>(left), std::get<int>(right)));
 }
 
-value runtime_eval(const ast::term& term, const std::vector<value>& env, std::pmr::monotonic_buffer_resource& arena) {
-  return std::visit(overloaded{
-                        [&](const ast::var& var) -> value { return env[env.size() - 1 - var.index]; },
-                        [&](const ast::li_int& literal) -> value { return literal.value; },
-                        [&](const ast::li_bool& literal) -> value { return literal.value; },
-                        [&](const ast::abst& abst) -> value {
-                          auto* closure =
-                              std::pmr::polymorphic_allocator<::closure>{&arena}.new_object<::closure>(&abst, env);
-                          return closure;
-                        },
-                        [&](const ast::appl& appl) -> value {
-                          auto function = runtime_eval(*appl.func, env, arena);
-                          auto argument = runtime_eval(*appl.arg, env, arena);
-                          auto* closure = std::get<::closure*>(function);
-                          auto call_env = closure->captured_env;
-                          call_env.push_back(std::move(argument));
-                          return runtime_eval(*closure->abst->body, call_env, arena);
-                        },
-                        [&](const ast::binop& binop) -> value { return runtime_binop(binop, env, arena); },
-                        [&](const ast::ifexpr& ifexpr) -> value {
-                          auto condition = runtime_eval(*ifexpr.cond, env, arena);
-                          return runtime_eval(std::get<bool>(condition) ? *ifexpr.then : *ifexpr.els, env, arena);
-                        },
-                        [&](const ast::fix& fix) -> value {
-                          auto generator = runtime_eval(*fix.body, env, arena);
-                          auto* closure = std::get<::closure*>(generator);
-                          auto& body_abst = std::get<ast::abst>(*closure->abst->body);
-                          auto* recursive = std::pmr::polymorphic_allocator<::closure>{&arena}.new_object<::closure>(
-                              &body_abst, closure->captured_env);
-                          recursive->captured_env.push_back(recursive);
-                          return recursive;
-                        },
-                        [](const ast::li_unit&) -> value { return std::monostate{}; },
-                        [&](const ast::tup& tuple) -> value {
-                          auto* result = std::pmr::polymorphic_allocator<tuple_value>{&arena}.new_object<tuple_value>();
-                          result->fields.reserve(tuple.fields.size());
-                          for (const auto* field : tuple.fields) {
-                            auto value = runtime_eval(*field, env, arena);
-                            result->fields.push_back(std::move(value));
-                          }
-                          return result;
-                        },
-                        [&](const ast::field& field) -> value {
-                          auto base = runtime_eval(*field.base, env, arena);
-                          return std::get<tuple_value*>(base)->fields[field.index];
-                        },
-                        [&](const ast::ctor& ctor) -> value {
-                          auto* result = std::pmr::polymorphic_allocator<sum_value>{&arena}.new_object<sum_value>();
-                          result->name = ctor.name;
-                          result->tag = ctor.tag;
-                          if (ctor.payload) {
-                            auto payload = runtime_eval(*ctor.payload, env, arena);
-                            result->payload = std::move(payload);
-                          }
-                          return result;
-                        },
-                        [&](const ast::case_pack& case_expr) -> value {
-                          auto scrutinee = runtime_eval(*case_expr.scrutinee, env, arena);
-                          auto* sum = std::get<sum_value*>(scrutinee);
-                          auto arm = runtime_eval(*case_expr.arms[sum->tag].body, env, arena);
-                          auto* closure = std::get<::closure*>(arm);
-                          auto call_env = closure->captured_env;
-                          call_env.push_back(std::move(sum->payload));
-                          return runtime_eval(*closure->abst->body, call_env, arena);
-                        },
-                    },
-                    term);
+lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
+                         std::pmr::monotonic_buffer_resource& arena) {
+  const ast::term* current_term = &term;
+  const std::vector<value>* current_env = &env;
+  std::vector<value> owned_env;
+
+  enum class runtime_step { value, application, binop, ifexpr, fix, tuple, field, ctor, case_pack };
+  bool cont = true;
+  // Tail transitions reuse this evaluator frame; awaited children transfer directly to their continuation.
+  while (cont) {
+    cont = false;
+    value result;
+    const auto step = std::visit(
+        overloaded{
+            [&](const ast::var& var) {
+              result = (*current_env)[current_env->size() - 1 - var.index];
+              return runtime_step::value;
+            },
+            [&](const ast::li_int& literal) {
+              result = literal.value;
+              return runtime_step::value;
+            },
+            [&](const ast::li_bool& literal) {
+              result = literal.value;
+              return runtime_step::value;
+            },
+            [&](const ast::abst& abst) {
+              result = std::pmr::polymorphic_allocator<::closure>{&arena}.new_object<::closure>(&abst, *current_env);
+              return runtime_step::value;
+            },
+            [&](const ast::appl&) {
+              cont = true;
+              return runtime_step::application;
+            },
+            [&](const ast::binop&) { return runtime_step::binop; },
+            [&](const ast::ifexpr&) {
+              cont = true;
+              return runtime_step::ifexpr;
+            },
+            [&](const ast::fix&) { return runtime_step::fix; },
+            [&](const ast::li_unit&) {
+              result = std::monostate{};
+              return runtime_step::value;
+            },
+            [&](const ast::tup&) { return runtime_step::tuple; },
+            [&](const ast::field&) { return runtime_step::field; },
+            [&](const ast::ctor&) { return runtime_step::ctor; },
+            [&](const ast::case_pack&) {
+              cont = true;
+              return runtime_step::case_pack;
+            },
+        },
+        *current_term);
+
+    switch (step) {
+      case runtime_step::value:
+        co_return result;
+      case runtime_step::application: {
+        const auto& appl = std::get<ast::appl>(*current_term);
+        auto function = co_await runtime_eval(*appl.func, *current_env, arena);
+        auto argument = co_await runtime_eval(*appl.arg, *current_env, arena);
+        auto* closure = std::get<::closure*>(function);
+        auto call_env = closure->captured_env;
+        call_env.push_back(std::move(argument));
+        owned_env = std::move(call_env);
+        current_env = &owned_env;
+        current_term = closure->abst->body;
+        break;
+      }
+      case runtime_step::binop:
+        co_return co_await runtime_binop(std::get<ast::binop>(*current_term), *current_env, arena);
+      case runtime_step::ifexpr: {
+        const auto& ifexpr = std::get<ast::ifexpr>(*current_term);
+        auto condition = co_await runtime_eval(*ifexpr.cond, *current_env, arena);
+        current_term = std::get<bool>(condition) ? ifexpr.then : ifexpr.els;
+        break;
+      }
+      case runtime_step::fix: {
+        const auto& fix = std::get<ast::fix>(*current_term);
+        auto generator = co_await runtime_eval(*fix.body, *current_env, arena);
+        auto* closure = std::get<::closure*>(generator);
+        auto& body_abst = std::get<ast::abst>(*closure->abst->body);
+        auto* recursive =
+            std::pmr::polymorphic_allocator<::closure>{&arena}.new_object<::closure>(&body_abst, closure->captured_env);
+        recursive->captured_env.push_back(recursive);
+        co_return recursive;
+      }
+      case runtime_step::tuple: {
+        const auto& tuple = std::get<ast::tup>(*current_term);
+        auto* tuple_result = std::pmr::polymorphic_allocator<tuple_value>{&arena}.new_object<tuple_value>();
+        tuple_result->fields.reserve(tuple.fields.size());
+        for (const auto* field : tuple.fields) {
+          auto field_value = co_await runtime_eval(*field, *current_env, arena);
+          tuple_result->fields.push_back(std::move(field_value));
+        }
+        co_return tuple_result;
+      }
+      case runtime_step::field: {
+        const auto& field = std::get<ast::field>(*current_term);
+        auto base = co_await runtime_eval(*field.base, *current_env, arena);
+        co_return std::get<tuple_value*>(base)->fields[field.index];
+      }
+      case runtime_step::ctor: {
+        const auto& ctor = std::get<ast::ctor>(*current_term);
+        auto* sum_result = std::pmr::polymorphic_allocator<sum_value>{&arena}.new_object<sum_value>();
+        sum_result->name = ctor.name;
+        sum_result->tag = ctor.tag;
+        if (ctor.payload) {
+          auto payload = co_await runtime_eval(*ctor.payload, *current_env, arena);
+          sum_result->payload = std::move(payload);
+        }
+        co_return sum_result;
+      }
+      case runtime_step::case_pack: {
+        const auto& case_expr = std::get<ast::case_pack>(*current_term);
+        auto scrutinee = co_await runtime_eval(*case_expr.scrutinee, *current_env, arena);
+        auto* sum = std::get<sum_value*>(scrutinee);
+        auto arm = co_await runtime_eval(*case_expr.arms[sum->tag].body, *current_env, arena);
+        auto* closure = std::get<::closure*>(arm);
+        auto call_env = closure->captured_env;
+        call_env.push_back(std::move(sum->payload));
+        owned_env = std::move(call_env);
+        current_env = &owned_env;
+        current_term = closure->abst->body;
+        break;
+      }
+    }
+  }
 }
 
-ast::term constant_eval(const ast::term& term);
+lazy<ast::term> constant_eval(const ast::term& term);
 
-ast::term constant_binop(const ast::binop& binop) {
-  auto left = constant_eval(*binop.left);
-  auto right = constant_eval(*binop.right);
+lazy<ast::term> constant_binop(const ast::binop& binop) {
+  auto left = co_await constant_eval(*binop.left);
+  auto right = co_await constant_eval(*binop.right);
   auto* left_literal = std::get_if<ast::li_int>(&left);
   auto* right_literal = std::get_if<ast::li_int>(&right);
   if (!left_literal || !right_literal)
     throw eval_err{eval_status::unsupported, "binary operator requires integer constants"};
-  return std::visit(overloaded{
-                        [](int value) -> ast::term { return ast::term{ast::li_int{value}}; },
-                        [](bool value) -> ast::term { return ast::term{ast::li_bool{value}}; },
-                    },
-                    apply_binop(binop.op, left_literal->value, right_literal->value));
+  co_return std::visit(overloaded{
+                           [](int value) -> ast::term { return ast::term{ast::li_int{value}}; },
+                           [](bool value) -> ast::term { return ast::term{ast::li_bool{value}}; },
+                       },
+                       apply_binop(binop.op, left_literal->value, right_literal->value));
 }
 
-ast::term constant_eval(const ast::term& term) {
-  return std::visit(overloaded{
-                        [](const ast::li_int& literal) -> ast::term { return ast::term{literal}; },
-                        [](const ast::li_bool& literal) -> ast::term { return ast::term{literal}; },
-                        [](const ast::li_unit& literal) -> ast::term { return ast::term{literal}; },
-                        [&](const ast::binop& binop) -> ast::term { return constant_binop(binop); },
-                        [&](const ast::ifexpr& ifexpr) -> ast::term {
-                          auto condition = constant_eval(*ifexpr.cond);
-                          auto* literal = std::get_if<ast::li_bool>(&condition);
-                          if (!literal)
-                            throw eval_err{eval_status::unsupported, "if condition is not a boolean constant"};
-                          return constant_eval(literal->value ? *ifexpr.then : *ifexpr.els);
-                        },
-                        [](const auto&) -> ast::term {
-                          throw eval_err{eval_status::unsupported, "expression is not compile-time evaluable"};
-                        },
-                    },
-                    term);
+lazy<ast::term> constant_eval(const ast::term& term) {
+  const ast::term* current_term = &term;
+  enum class constant_step { value, binop, ifexpr, unsupported };
+  bool cont = true;
+  while (cont) {
+    cont = false;
+    ast::term result{ast::li_unit{}};
+    const auto step = std::visit(overloaded{
+                                     [&](const ast::li_int& literal) {
+                                       result = ast::term{literal};
+                                       return constant_step::value;
+                                     },
+                                     [&](const ast::li_bool& literal) {
+                                       result = ast::term{literal};
+                                       return constant_step::value;
+                                     },
+                                     [&](const ast::li_unit& literal) {
+                                       result = ast::term{literal};
+                                       return constant_step::value;
+                                     },
+                                     [&](const ast::binop&) { return constant_step::binop; },
+                                     [&](const ast::ifexpr&) {
+                                       cont = true;
+                                       return constant_step::ifexpr;
+                                     },
+                                     [](const auto&) { return constant_step::unsupported; },
+                                 },
+                                 *current_term);
+
+    switch (step) {
+      case constant_step::value:
+        co_return result;
+      case constant_step::binop:
+        co_return co_await constant_binop(std::get<ast::binop>(*current_term));
+      case constant_step::ifexpr: {
+        const auto& ifexpr = std::get<ast::ifexpr>(*current_term);
+        auto condition = co_await constant_eval(*ifexpr.cond);
+        auto* literal = std::get_if<ast::li_bool>(&condition);
+        if (!literal) throw eval_err{eval_status::unsupported, "if condition is not a boolean constant"};
+        current_term = literal->value ? ifexpr.then : ifexpr.els;
+        break;
+      }
+      case constant_step::unsupported:
+        throw eval_err{eval_status::unsupported, "expression is not compile-time evaluable"};
+    }
+  }
 }
 
 }  // namespace
@@ -181,7 +272,7 @@ eval_result evaluate(const ast::term& term, eval_strategy strategy) {
   if (strategy == eval_strategy::runtime) {
     auto arena = std::make_unique<std::pmr::monotonic_buffer_resource>();
     try {
-      auto result = runtime_eval(term, {}, *arena);
+      auto result = runtime_eval(term, {}, *arena).get();
       if (std::holds_alternative<closure*>(result))
         throw eval_err{eval_status::runtime_failure, "top-level result must not be a closure"};
       return {std::move(result), std::move(arena)};
@@ -191,5 +282,5 @@ eval_result evaluate(const ast::term& term, eval_strategy strategy) {
     }
   }
 
-  return {constant_eval(term), nullptr};
+  return {constant_eval(term).get(), nullptr};
 }

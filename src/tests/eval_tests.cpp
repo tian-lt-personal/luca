@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 // luca
 #include <eval.hpp>
+#include <memory_resource>
 #include <parser.hpp>
 #include <utility>
 
@@ -17,6 +18,10 @@ auto eval_ok(const std::string& src) {
   auto r = parse(src, "", "");
   auto result = evaluate(r.first, eval_strategy::runtime);
   return test_eval_result{std::get<value>(std::move(result.result)), std::move(result.arena)};
+}
+
+ast::term* arena_term(std::pmr::monotonic_buffer_resource& arena, ast::term term) {
+  return std::pmr::polymorphic_allocator<ast::term>{&arena}.new_object<ast::term>(std::move(term));
 }
 
 }  // namespace
@@ -126,6 +131,20 @@ TEST(eval_tests, try_compiletime_rejects_overflow) {
   }
 }
 
+TEST(eval_tests, compiletime_deep_arena_expression_is_stack_safe) {
+  constexpr int depth = 100'000;
+  std::pmr::monotonic_buffer_resource arena;
+  auto* expression = arena_term(arena, ast::term{ast::li_int{1}});
+  for (int i = 0; i < depth; ++i) {
+    auto* left = arena_term(arena, ast::term{ast::li_int{1}});
+    expression =
+        arena_term(arena, ast::term{ast::binop{.op = token{tk::op_plus{}}, .left = left, .right = expression}});
+  }
+
+  auto result = evaluate(*expression, eval_strategy::compiletime);
+  EXPECT_EQ(std::get<ast::li_int>(std::get<ast::term>(result.result)).value, depth + 1);
+}
+
 TEST(eval_tests, runtime_reports_division_by_zero) {
   auto parsed = parse("let x : int = 0 in 1 / x", "", "");
   try {
@@ -167,6 +186,24 @@ TEST(eval_tests, fix_y_combinator) {
                                   "y (\\f : int -> int . \\n : int . if n < 2 then 1 else n * f (n - 1)) in fact 10")
                               .v),
             3628800);
+}
+
+TEST(eval_tests, tail_recursive_countdown_is_stack_safe) {
+  constexpr int steps = 200'000;
+  auto source =
+      "let loop = fix (\\loop : int -> int . \\n : int . "
+      "if n < 1 then 0 else loop (n - 1)) in loop " +
+      std::to_string(steps);
+  EXPECT_EQ(std::get<int>(eval_ok(source).v), 0);
+}
+
+TEST(eval_tests, deep_non_tail_recursion_is_stack_safe) {
+  constexpr int steps = 100'000;
+  auto source =
+      "let loop = fix (\\loop : int -> int . \\n : int . "
+      "if n < 1 then 0 else loop (n - 1) + 0) in loop " +
+      std::to_string(steps);
+  EXPECT_EQ(std::get<int>(eval_ok(source).v), 0);
 }
 
 // -- closure rejection at top level ------------------------------------------
