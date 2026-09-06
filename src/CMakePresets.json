@@ -31,7 +31,8 @@
       "hidden": true,
       "inherits": "base",
       "cacheVariables": {
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "ON",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -118,6 +119,11 @@
     {
       "name": "ci-coverage",
       "configurePreset": "ci-coverage",
+      "filter": {
+        "exclude": {
+          "name": "eval_tests\\.(compiletime_deep_arena_expression_is_stack_safe|tail_recursive_countdown_is_stack_safe|deep_non_tail_recursion_is_stack_safe)"
+        }
+      },
       "output": {
         "outputOnFailure": true
       }

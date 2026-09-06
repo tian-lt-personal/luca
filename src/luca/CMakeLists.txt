@@ -15,6 +15,7 @@ add_custom_command(
 add_library(luca STATIC
   astdump.cpp
   astdump.hpp
+  coro.hpp
   diag.cpp
   eval.cpp
   eval.hpp
