@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 // luca
 #include "coro.hpp"
 #include "eval.hpp"
@@ -60,6 +61,43 @@ primitive apply_binop(const token& op, int left, int right) {
       },
       op);
 }
+
+struct tail_call {
+  struct awaiter {
+    tail_call* call;
+
+    bool await_ready() const noexcept { return true; }
+    void await_suspend(std::coroutine_handle<>) const noexcept {}
+    void await_resume() noexcept { call->apply(); }
+  };
+
+  const ast::term** current_term;
+  const std::vector<value>** current_env;
+  std::vector<value>* owned_env;
+  const ast::term* next_term;
+  std::vector<value> next_env;
+
+  tail_call(const ast::term*& current_term, const ast::term* next_term) noexcept
+      : current_term{&current_term}, current_env{nullptr}, owned_env{nullptr}, next_term{next_term} {}
+
+  tail_call(const ast::term*& current_term, const std::vector<value>*& current_env, std::vector<value>& owned_env,
+            const ast::term* next_term, std::vector<value>&& next_env)
+      : current_term{&current_term},
+        current_env{&current_env},
+        owned_env{&owned_env},
+        next_term{next_term},
+        next_env{std::move(next_env)} {}
+
+  awaiter tail_awaiter() noexcept { return awaiter{this}; }
+
+  void apply() noexcept {
+    *current_term = next_term;
+    if (current_env) {
+      *owned_env = std::move(next_env);
+      *current_env = owned_env;
+    }
+  }
+};
 
 lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
                          std::pmr::monotonic_buffer_resource& arena);
@@ -136,9 +174,7 @@ lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
         auto* closure = std::get<::closure*>(function);
         auto call_env = closure->captured_env;
         call_env.push_back(std::move(argument));
-        owned_env = std::move(call_env);
-        current_env = &owned_env;
-        current_term = closure->abst->body;
+        co_await tail_call{current_term, current_env, owned_env, closure->abst->body, std::move(call_env)};
         break;
       }
       case runtime_step::binop:
@@ -146,7 +182,7 @@ lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
       case runtime_step::ifexpr: {
         const auto& ifexpr = std::get<ast::ifexpr>(*current_term);
         auto condition = co_await runtime_eval(*ifexpr.cond, *current_env, arena);
-        current_term = std::get<bool>(condition) ? ifexpr.then : ifexpr.els;
+        co_await tail_call{current_term, std::get<bool>(condition) ? ifexpr.then : ifexpr.els};
         break;
       }
       case runtime_step::fix: {
@@ -193,9 +229,7 @@ lazy<value> runtime_eval(const ast::term& term, const std::vector<value>& env,
         auto* closure = std::get<::closure*>(arm);
         auto call_env = closure->captured_env;
         call_env.push_back(std::move(sum->payload));
-        owned_env = std::move(call_env);
-        current_env = &owned_env;
-        current_term = closure->abst->body;
+        co_await tail_call{current_term, current_env, owned_env, closure->abst->body, std::move(call_env)};
         break;
       }
     }
@@ -257,7 +291,7 @@ lazy<ast::term> constant_eval(const ast::term& term) {
         auto condition = co_await constant_eval(*ifexpr.cond);
         auto* literal = std::get_if<ast::li_bool>(&condition);
         if (!literal) throw eval_err{eval_status::unsupported, "if condition is not a boolean constant"};
-        current_term = literal->value ? ifexpr.then : ifexpr.els;
+        co_await tail_call{current_term, literal->value ? ifexpr.then : ifexpr.els};
         break;
       }
       case constant_step::unsupported:

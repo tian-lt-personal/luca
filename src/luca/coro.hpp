@@ -45,6 +45,15 @@ class lazy_promise {
  public:
   lazy<T> get_return_object() noexcept { return lazy<T>{std::coroutine_handle<lazy_promise>::from_promise(*this)}; }
   constexpr auto initial_suspend() noexcept { return std::suspend_always{}; }
+  template <class Awaitable>
+    requires requires(Awaitable&& awaitable) { std::forward<Awaitable>(awaitable).tail_awaiter(); }
+  auto await_transform(Awaitable&& awaitable) noexcept {
+    return std::forward<Awaitable>(awaitable).tail_awaiter();
+  }
+  template <class Awaitable>
+  decltype(auto) await_transform(Awaitable&& awaitable) noexcept {
+    return std::forward<Awaitable>(awaitable);
+  }
   constexpr auto final_suspend() noexcept {
     struct final_awaiter : std::suspend_always {
       std::coroutine_handle<> await_suspend(std::coroutine_handle<lazy_promise> handle) noexcept {
