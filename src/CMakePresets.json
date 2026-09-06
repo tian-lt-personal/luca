@@ -31,7 +31,8 @@
       "hidden": true,
       "inherits": "base",
       "cacheVariables": {
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "ON",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
